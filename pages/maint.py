@@ -1,4 +1,4 @@
-"""09 MAINTENANCE: upkeep — the engine's counters, the log folder, bundles, always on top, and the monitor's health."""
+"""10 MAINTENANCE: upkeep — the engine's counters, the log folder, bundles, always on top, and the monitor's health."""
 from __future__ import annotations
 
 import datetime as dt
@@ -15,7 +15,7 @@ STARTED = time.time()
 
 
 class MaintPage(Page):
-    code, title, sub, color = "09", "MAINTENANCE", "upkeep", VIOLET
+    code, title, sub, color = "10", "MAINTENANCE", "upkeep", VIOLET
 
     def __init__(self, w):
         super().__init__(w)

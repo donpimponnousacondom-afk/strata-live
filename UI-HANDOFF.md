@@ -3,7 +3,7 @@
 The running notes for the console's UI only. We add to them as we go; the newest notes are at the bottom. The overall
 notes on the Strata install are in `D:\strata\Handoff.md`.
 
-**Now:** revision **0.4.0** (`version.py`), 2026-10-13 ~18:00. It's built and running. The user likes what they've
+**Now:** revision **0.5.0** (`version.py`), 2026-10-13 ~18:20. It's built and running. The user likes what they've
 seen so far and will test the live controls later.
 
 ---
@@ -48,7 +48,7 @@ seen so far and will test the live controls later.
 | `tools\screenshot_pages.py` | selftests each page and screenshots it; reports tracebacks |
 | `strata_live.py` | the watchers (shared with the old web page): `/metrics` poll, logs, configs, Windows events, events, incidents, bundle |
 
-## 4. The departments (F1–F9)
+## 4. The departments (F1–F10)
 
 | # | Page | Main graphic | Controls |
 |---|---|---|---|
@@ -57,10 +57,11 @@ seen so far and will test the live controls later.
 | 03 | Core control | engine buttons | STANDBY, ENGAGE, RESTART ENGINE, FULL RESTART, SHUT DOWN / START; live sliders; saved-settings sliders; RESTORE DEFAULTS |
 | 04 | Power & coolant | SSD ▸ RAM ▸ PCIe ▸ GPU flow, 4 gauges, last-minute graphs, hardware events | — |
 | 05 | Comms · pi link | conversation-size sawtooth with compactions marked, compaction table, link tiles | — |
-| 06 | Diagnostics | the scan bar over the core, ✓ ! ✕ marks on the parts | levels 5–1; SHORT, PREFILL and FULL speed trials |
-| 07 | Ship's log | every event, warnings per hour | source filters, warnings only, requests hidden/shown, incidents |
-| 08 | Reports | the report drawn on the page | last hour, shift, today, since start; open in browser |
-| 09 | Maintenance | counters (moved from the sidebar), log folder, monitor health | bundle, always on top, open the log folder |
+| 06 | Direct line | a chat with Strata, no pi: streamed reply with thinking in grey, tok/s and first-token time | thinking level (none, low, medium, high, Strata's), reply limit, SEND/STOP, CLEAR |
+| 07 | Diagnostics | the scan bar over the core, ✓ ! ✕ marks on the parts | levels 5–1; SHORT, PREFILL and FULL speed trials |
+| 08 | Ship's log | every event, warnings per hour | source filters, warnings only, requests hidden/shown, incidents |
+| 09 | Reports | the report drawn on the page | last hour, shift, today, since start; open in browser |
+| 10 | Maintenance | counters (moved from the sidebar), log folder, monitor health | bundle, always on top, open the log folder |
 
 **Core colours**
 
@@ -161,6 +162,7 @@ Local git repository in `D:\strata-live`, with no remote. `.gitignore` keeps out
 | 0.1.0 | 2026-10-13 14:15 | desktop window in place of the web page (tkinter), the new checks (CHANGES §1, §2) |
 | 0.2.0 | 14:45 | the engineering-console look: warp core, bars, traces, ship's log (§1b) |
 | 0.3.0 | 16:40 | second pass from the user's reference images: leader lines, orbit, readouts, duty ring (§1c) |
+| 0.5.0 | 18:20 | 06 DIRECT LINE: talk to Strata from the console; departments renumbered (Diagnostics F7 … Maintenance F10) |
 | 0.4.0 | 17:45 | the console: 9 departments, engine control, live and saved tuning, speed trials, diagnostics levels, reports, maintenance; start and `--open` fixes (§1d) |
 
 Revisions 0.1–0.3 were before git. Their files are in `backups\20261013-141320\`, `backups\20261013-163617\` and
@@ -171,3 +173,20 @@ Revisions 0.1–0.3 were before git. Their files are in `backups\20261013-141320
 ### 2026-10-13 ~18:00: handoff started
 - The user likes what they've seen and will test the live controls later.
 - They asked for this file and for revision control. Local git was set up at 0.4.0.
+
+### 2026-10-13 ~18:20: Direct line (0.5.0)
+- The user asked to talk to Strata without pi. Strata's own chat page (`D:\strata\serve\web`) is not changed.
+- The new page `pages\direct.py`:
+  - streams `/v1/chat/completions` with thinking (`reasoning_content`) shown in grey
+  - measures tok/s and the first-token time
+  - keeps the conversation until CLEAR
+  - saves each exchange quietly to `logs\chats\chat-<date>.jsonl`
+  - Text widgets are embedded in the canvas (made once, placed on each build); a worker thread passes text back through a queue.
+- `--say="..."` sends one message on its own, for testing.
+- **Tested live:**
+  - a 3-sentence question: 68 tokens, 38.7 tok/s, first token 0.7 s, saved to logs\chats
+  - thinking streams as `reasoning_content` (76 chunks at "low")
+- **Not tested:**
+  - STOP during a long reply
+  - a long multi-turn chat
+- **Cost:** a chat here replaces pi's conversation in Strata's memory, so pi re-reads it on its next turn. The page says so.

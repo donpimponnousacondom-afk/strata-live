@@ -1,4 +1,4 @@
-"""07 SHIP'S LOG: every event, with filters by department and level, warnings per hour, and the incident snapshots."""
+"""08 SHIP'S LOG: every event, with filters by department and level, warnings per hour, and the incident snapshots."""
 from __future__ import annotations
 
 import datetime as dt
@@ -16,7 +16,7 @@ HW_KINDS = {"gpu hot", "vram low", "ram full"}
 
 
 class ShipLogPage(Page):
-    code, title, sub, color = "07", "SHIP'S LOG", "every event", LILAC
+    code, title, sub, color = "08", "SHIP'S LOG", "every event", LILAC
 
     def __init__(self, w):
         super().__init__(w)

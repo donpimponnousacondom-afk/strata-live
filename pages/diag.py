@@ -1,4 +1,4 @@
-"""06 DIAGNOSTICS: diagnostic levels 5 (quick, read-only) to 1 (everything, with speed trials), and the speed trials.
+"""07 DIAGNOSTICS: diagnostic levels 5 (quick, read-only) to 1 (everything, with speed trials), and the speed trials.
 
 Levels 5-3 only read. Levels 2 and 1 send test requests to Strata, like the speed-trial buttons: they run only when
 Strata is idle, take two clicks, and cost pi one full re-read on its next turn (the conversation cache is off)."""
@@ -27,7 +27,7 @@ WORST = {"ok": 0, "warn": 1, "bad": 2}
 
 
 class DiagPage(Page):
-    code, title, sub, color = "06", "DIAGNOSTICS", "checks and speed trials", GREEN
+    code, title, sub, color = "07", "DIAGNOSTICS", "checks and speed trials", GREEN
 
     def __init__(self, w):
         super().__init__(w)

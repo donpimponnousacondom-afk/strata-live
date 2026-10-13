@@ -9,7 +9,7 @@ How Strata maps onto the core (also explained on the WARP CORE page):
   plasma flow         -> tokens written and sent on to pi
   coolant             -> GPU temperature
 
-Layout: header (title, condition), the sidebar of departments (F1-F9), the warp core on the left of every page, and the
+Layout: header (title, condition), the sidebar of departments (F1-F10), the warp core on the left of every page, and the
 department's page on the right. Drawing: the frame on resize or page change ("static"), readouts once a second
 ("dyn"), and the core's colours 20 times a second without recreating anything.
 
@@ -45,9 +45,9 @@ def dept_of(ev: dict) -> int:
     if src == "pi" or kind in ("conversation shortened", "app hung up"):
         return 4
     if src == "config" or kind == "settings mismatch":
-        return 5
+        return 6
     if src == "monitor":
-        return 8
+        return 9
     return 1
 
 
@@ -513,7 +513,7 @@ class LcarsWindow:
                 if ev["ts"] > self.dept_seen[d] and d != self.page:
                     self.dept_alert[d] = True
         blink = int(time.time() * 2) % 2 == 0
-        cols = (ORANGE, PEACH, RED_HI, SKY, BLUE, GREEN, LILAC, GOLD, VIOLET)
+        cols = (ORANGE, PEACH, RED_HI, SKY, BLUE, GOLD, GREEN, LILAC, TAN, VIOLET)
         for i, pg in enumerate(self.pages):
             x0, y0, x1, y1 = self.L["side"][i]
             active = i == self.page

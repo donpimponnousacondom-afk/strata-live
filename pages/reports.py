@@ -1,4 +1,4 @@
-"""08 REPORTS: a report for the captain, drawn here and saved quietly as HTML (with charts) and Markdown."""
+"""09 REPORTS: a report for the captain, drawn here and saved quietly as HTML (with charts) and Markdown."""
 from __future__ import annotations
 
 import datetime as dt
@@ -13,7 +13,7 @@ from pages.base import Page
 
 
 class ReportsPage(Page):
-    code, title, sub, color = "08", "REPORTS", "for the captain", GOLD
+    code, title, sub, color = "09", "REPORTS", "for the captain", GOLD
 
     def __init__(self, w):
         super().__init__(w)

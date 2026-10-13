@@ -222,7 +222,7 @@ class MainPage(Page):
         dx0, dy0, dx1, dy1 = self.detail_r
         if len(evs) > rows:
             self.w.text(dx1 - 8, dy0 + 10, f"{self.log_offset + 1}–{min(len(evs), self.log_offset + rows)} OF "
-                                           f"{len(evs)} · SCROLL · F7 FOR THE FULL LOG", self.w.f_tiny, MUTED,
+                                           f"{len(evs)} · SCROLL · F8 FOR THE FULL LOG", self.w.f_tiny, MUTED,
                         anchor="e")
         sel = next((e for e in evs if self.selected == (e["ts"], e["kind"])), None)
         self.w.text(dx0 + 10, dy0 + 30, (f"{sl.local(sel['ts'])} · {sel['source'].upper()} · {sel['kind'].upper()} ▸ "
