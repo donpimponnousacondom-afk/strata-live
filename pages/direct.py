@@ -17,10 +17,11 @@ import tkinter as tk
 import urllib.request
 
 import strata_control as ctl
-from lcars_theme import BG, BLUE, GOLD, GREEN, GRID, INK, LILAC, MUTED, ORANGE, PEACH, RED_HI, SKY, TAN
+from lcars_theme import BG, BLUE, GOLD, GREEN, GRID, INK, LILAC, MUTED, ORANGE, PEACH, RED_HI, SKY, TAN, VIOLET
 from pages.base import Page
 
 CHAT_DIR = os.path.join(ctl.sl.LOG_DIR, "chats")
+FEED = os.path.join(CHAT_DIR, "feed.jsonl")         # conversations from outside: tools\ask_strata.py
 
 
 class DirectPage(Page):
@@ -51,6 +52,9 @@ class DirectPage(Page):
         self.view.tag_configure("answer", foreground=INK)
         self.view.tag_configure("meta", foreground=LILAC, font=w.f_tiny)
         self.view.tag_configure("error", foreground=RED_HI)
+        self.view.tag_configure("other", foreground=VIOLET, font=w.f_lab, spacing1=10)
+        self.view.tag_configure("other_text", foreground=LILAC)
+        self.view.tag_configure("strata_other", foreground=SKY, font=w.f_lab, spacing1=6)
         self.view.configure(state="disabled")
         self.entry = tk.Text(w.root, bg="#0b0b10", fg=INK, font=w.f_small, wrap="word", relief="flat", height=3,
                              highlightthickness=2, highlightbackground=GOLD, highlightcolor=ORANGE,
@@ -58,11 +62,79 @@ class DirectPage(Page):
         self.entry.bind("<Return>", self.on_enter)
         self.entry.bind("<Shift-Return>", lambda e: None)
         self.intro()
+        self.feed_pos = 0
+        self.feed_state: dict = {}
+        self.read_feed(since=time.time() - 4 * 3600)      # the last few hours of outside conversations
+
+    # ------------------------------------------------------------ conversations from outside (tools\ask_strata.py)
+    def read_feed(self, since: float | None = None) -> None:
+        """Show what others (Claude, scripts) say to Strata: logs\\chats\\feed.jsonl, written as it streams."""
+        try:
+            size = os.path.getsize(FEED)
+        except OSError:
+            return
+        if size < self.feed_pos:
+            self.feed_pos = 0
+        if size == self.feed_pos:
+            return
+        with open(FEED, encoding="utf-8", errors="replace") as f:
+            f.seek(self.feed_pos)
+            data = f.read()
+            self.feed_pos = f.tell()
+        got = False
+        for line in data.splitlines():
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if since and r.get("ts", 0) < since:
+                continue
+            self.show_feed(r)
+            got = True
+        if got and since is None and self.w.page != self.w.pages.index(self):
+            self.w.dept_alert[self.w.pages.index(self)] = True    # the button blinks: a conversation came in
+
+    def show_feed(self, r: dict) -> None:
+        who = (r.get("who") or "other").upper()
+        st = self.feed_state.setdefault(r.get("id"), {"head": False, "think": False})
+        t = r.get("type")
+        if t == "user":
+            if r.get("new"):
+                self.write(f"\n— {who} STARTED A NEW CONVERSATION —\n", "meta")
+            self.write(f"\n{who} (VIA API) · {dt.datetime.fromtimestamp(r['ts']):%H:%M:%S}\n", "other")
+            self.write(r.get("text", "") + "\n", "other_text")
+        elif t in ("think", "answer"):
+            if not st["head"]:
+                st["head"] = True
+                self.write(f"STRATA → {who}\n", "strata_other")
+            if t == "think":
+                if not st["think"]:
+                    st["think"] = True
+                    self.write("thinking · ", "think")
+                self.write(r.get("text", ""), "think")
+            else:
+                if st["think"]:
+                    st["think"] = False
+                    self.write("\n", "think")
+                self.write(r.get("text", ""), "answer")
+        elif t == "done":
+            s = r.get("stats") or {}
+            bits = [f"{s.get('tokens', 0):,} tokens"]
+            if s.get("tok_s"):
+                bits.append(f"{s['tok_s']} tok/s")
+            if s.get("ttft") is not None:
+                bits.append(f"first token {s['ttft']} s")
+            bits.append(f"ended: {s.get('finish') or '?'}")
+            self.write("\n" + " · ".join(bits) + "\n", "meta")
+        elif t == "error":
+            self.write(f"\n[{who}'s line dropped: {r.get('text')}]\n", "error")
 
     def intro(self) -> None:
         self.write("DIRECT LINE TO STRATA · NO PI\n", "meta")
         self.write("Type below and press Enter (Shift+Enter for a new line). Thinking shows in grey as it arrives.\n"
-                   "Strata keeps one conversation in memory, so pi re-reads its own on its next turn.\n", "meta")
+                   "Strata keeps one conversation in memory, so pi re-reads its own on its next turn.\n"
+                   "Conversations from outside (Claude, through tools\\ask_strata.py) show here too, in violet.\n",
+                   "meta")
 
     def build(self, area) -> None:
         super().build(area)
@@ -180,6 +252,11 @@ class DirectPage(Page):
                     self.finish(val)
         except queue.Empty:
             pass
+        try:
+            self.read_feed()
+        except Exception:
+            import traceback
+            print(traceback.format_exc(), flush=True)
         self.w.root.after(80, self.poll)
 
     def finish(self, res: dict) -> None:

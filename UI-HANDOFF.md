@@ -3,7 +3,7 @@
 The running notes for the console's UI only. We add to them as we go; the newest notes are at the bottom. The overall
 notes on the Strata install are in `D:\strata\Handoff.md`.
 
-**Now:** revision **0.5.0** (`version.py`), 2026-10-13 ~18:20. It's built and running. The user likes what they've
+**Now:** revision **0.5.1** (`version.py`), 2026-10-13 ~18:30. It's built and running. The user likes what they've
 seen so far and will test the live controls later.
 
 ---
@@ -162,6 +162,7 @@ Local git repository in `D:\strata-live`, with no remote. `.gitignore` keeps out
 | 0.1.0 | 2026-10-13 14:15 | desktop window in place of the web page (tkinter), the new checks (CHANGES §1, §2) |
 | 0.2.0 | 14:45 | the engineering-console look: warp core, bars, traces, ship's log (§1b) |
 | 0.3.0 | 16:40 | second pass from the user's reference images: leader lines, orbit, readouts, duty ring (§1c) |
+| 0.5.1 | 18:30 | Direct line shows conversations from outside: `toolssk_strata.py` writes `logs\chatseed.jsonl` as it streams |
 | 0.5.0 | 18:20 | 06 DIRECT LINE: talk to Strata from the console; departments renumbered (Diagnostics F7 … Maintenance F10) |
 | 0.4.0 | 17:45 | the console: 9 departments, engine control, live and saved tuning, speed trials, diagnostics levels, reports, maintenance; start and `--open` fixes (§1d) |
 
@@ -190,3 +191,10 @@ Revisions 0.1–0.3 were before git. Their files are in `backups\20261013-141320
   - STOP during a long reply
   - a long multi-turn chat
 - **Cost:** a chat here replaces pi's conversation in Strata's memory, so pi re-reads it on its next turn. The page says so.
+
+### 2026-10-13 ~18:30: watching Claude talk to Strata (0.5.1)
+- The user wanted to see my conversations with Strata in the Direct Line.
+- `toolssk_strata.py "message" [--effort low] [--new] [--as NAME]` talks to Strata and keeps its own conversation (`logs\chats\<name>-conversation.json`). It appends each step to `logs\chatseed.jsonl` as it streams.
+- The Direct Line reads the feed every 80 ms and shows it in violet ("CLAUDE (VIA API)", then "STRATA → CLAUDE"), including the thinking. On start it shows the last 4 hours. The button blinks when a conversation arrives on another page.
+- **Tested live:** 3 turns, the second with thinking "low"; all shown on the screen with their numbers.
+- **To use:** run `toolssk_strata.py` with the .venv Python (any Python 3 works; it uses only the standard library).
