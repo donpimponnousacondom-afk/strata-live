@@ -1,0 +1,12 @@
+# your own events: never upload these
+logs/
+__pycache__/
+*.pyc
+
+# private: chat transcripts, file backups and local tuning notes
+out/
+backups/
+CHANGES-*.md
+
+# local tool settings
+.claude/

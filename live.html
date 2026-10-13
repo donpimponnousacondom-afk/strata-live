@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strata Live</title>
+<style>
+/* Layout: status strip, then the live machine graphic beside the context gauge, then hardware, requests and the event log. Single dark theme. */
+:root {
+  color-scheme: dark;
+  --bg: #0c121c; --panel: #131c2a; --panel-2: #182335; --line: #24314a;
+  --ink: #e4eaf4; --muted: #8d9ab2; --faint: #56637c;
+  --gpu: #7d9bff; --gpu-dim: #2a3a6b; --hit: #45d08a; --miss: #f3a73b; --ssd: #c690ff; --bad: #ff7a72;
+  --font: "Segoe UI", system-ui, sans-serif; --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14.5px/1.5 var(--font); }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 18px 18px 40px; display: grid; gap: 14px; }
+h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: .01em; }
+h2 { margin: 0; font-size: .78rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-family: var(--mono); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.head { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; justify-content: space-between; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill { font: 600 .74rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 6px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+.pill.up { color: var(--hit); border-color: #1f5a3c; background: #11281d; }
+.pill.down { color: var(--bad); border-color: #6b2a27; background: #2c1514; }
+.pill.gen { color: var(--gpu); border-color: #31447a; background: #18213d; }
+.pill.read { color: var(--ssd); border-color: #4e3570; background: #22183a; }
+.meta { color: var(--muted); font-size: .85rem; }
+.meta b { color: var(--ink); font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; }
+.grid3 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 14px; }
+@media (max-width: 900px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+#scene { width: 100%; height: 330px; display: block; }
+.phase { font-size: 1.05rem; font-weight: 600; min-height: 1.5em; }
+.big { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.big div { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; display: grid; gap: 2px; }
+.big b { font: 700 1.45rem/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.big span { font-size: .75rem; color: var(--muted); }
+.gauge { position: relative; height: 26px; background: var(--panel-2); border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.gauge .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, #2c4aa8, var(--gpu)); transition: width .6s; }
+.gauge .fill.warn { background: linear-gradient(90deg, #8a5a14, var(--miss)); }
+.gauge .fill.bad { background: linear-gradient(90deg, #8a2a24, var(--bad)); }
+.gauge .mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); opacity: .7; }
+.gauge-lbl { display: flex; justify-content: space-between; font: 400 .74rem var(--mono); color: var(--muted); gap: 8px; flex-wrap: wrap; }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0; }
+.kv span, .kv b { padding: 5px 0; border-bottom: 1px solid var(--line); font-size: .86rem; }
+.kv span { color: var(--muted); }
+.kv b { font: 500 .84rem var(--mono); text-align: right; font-variant-numeric: tabular-nums; padding-left: 10px; }
+.bars { display: grid; gap: 8px; }
+.bar { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 6.5rem; gap: 10px; align-items: center; font-size: .84rem; }
+.bar .t { height: 9px; background: var(--panel-2); border-radius: 5px; overflow: hidden; }
+.bar .t i { display: block; height: 100%; width: 0; background: var(--gpu); transition: width .6s; }
+.bar .v { font: 500 .8rem var(--mono); text-align: right; color: var(--muted); }
+#spark { width: 100%; height: 70px; display: block; }
+.tablebox { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .84rem; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font: 600 .68rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+td.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.tag { font: 600 .7rem var(--mono); padding: 2px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.tag.ok { color: var(--hit); background: #11281d; } .tag.warn { color: var(--miss); background: #2e2310; } .tag.bad { color: var(--bad); background: #2c1514; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.filters button { font: 500 .78rem var(--font); color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.filters button[aria-pressed="true"] { color: var(--ink); border-color: var(--gpu); }
+#log { display: grid; gap: 0; max-height: 460px; overflow-y: auto; }
+.ev { display: grid; grid-template-columns: 8.6rem 4.2rem minmax(0, 1fr); gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--line); font-size: .85rem; align-items: start; }
+.ev time { font: 400 .76rem var(--mono); color: var(--faint); padding-top: 2px; }
+.ev .lv { font: 600 .66rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px; border-radius: 4px; text-align: center; align-self: start; }
+.ev.error .lv { background: #3a1716; color: var(--bad); }
+.ev.warn .lv { background: #33260f; color: var(--miss); }
+.ev.info .lv { background: var(--panel-2); color: var(--muted); }
+.ev b { font-weight: 600; } .ev .src { color: var(--faint); font-size: .76rem; margin-left: 6px; }
+.ev p { margin: 2px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+.counts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .82rem; color: var(--muted); }
+.counts b { color: var(--ink); font-family: var(--mono); }
+.note { font-size: .78rem; color: var(--faint); }
+.sp-model { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: 10px; align-items: end; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.sp-name { font: 500 .8rem var(--mono); color: var(--muted); overflow-wrap: anywhere; padding-bottom: 16px; }
+.sp-bars { display: flex; gap: 6px; align-items: flex-end; overflow-x: auto; min-height: 96px; }
+.sp-day { display: grid; justify-items: center; gap: 2px; min-width: 38px; }
+.sp-day i { display: block; width: 22px; background: var(--gpu); border-radius: 3px 3px 0 0; }
+.sp-v { font: 500 .72rem var(--mono); color: var(--ink); }
+.sp-d { font: 400 .68rem var(--mono); color: var(--faint); }
+code { font-family: var(--mono); font-size: .85em; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--gpu); }
+button:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 560px) { .sp-model { grid-template-columns: minmax(0, 1fr); } .sp-name { padding-bottom: 0; } }
+button.small { font: 500 .8rem var(--font); color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; cursor: pointer; }
+button.small:hover, .filters button:hover { border-color: var(--gpu); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--gpu); outline-offset: 2px; }
+.inc { display: grid; grid-template-columns: 8.6rem minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 4px; border-bottom: 1px solid var(--line); font-size: .85rem; }
+.inc time { font: 400 .76rem var(--mono); color: var(--faint); }
+.inc p { margin: 2px 0 0; color: var(--muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.inc.on { background: var(--panel-2); }
+#replay { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+#replay[hidden] { display: none; }
+#rp-chart { width: 100%; height: 190px; display: block; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .76rem; color: var(--muted); }
+.legend-row i { display: inline-block; width: 12px; height: 4px; border-radius: 2px; margin: 0 5px 2px 0; vertical-align: middle; }
+.band-key i { width: 10px; height: 10px; margin-left: 6px; }
+.rp-controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+#rp-slider { width: 100%; accent-color: var(--gpu); }
+.rp-kv { grid-template-columns: repeat(2, minmax(0, 1fr) auto); column-gap: 18px; }
+@media (max-width: 700px) { .rp-kv { grid-template-columns: minmax(0, 1fr) auto; } }
+@media (max-width: 560px) { .ev, .inc { grid-template-columns: minmax(0, 1fr); gap: 4px; } .bar { grid-template-columns: 5rem minmax(0, 1fr) 5.5rem; } }
+/* Help: a "?" beside each panel title opens its explainer; the Help button in the header opens or closes them all. */
+.ttl { display: flex; align-items: center; gap: 8px; }
+.hbtn { font: 700 .72rem/1 var(--mono); width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); cursor: pointer; flex: none; }
+.hbtn:hover, .hbtn[aria-expanded="true"] { color: var(--ink); border-color: var(--gpu); }
+.help { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--gpu); border-radius: 8px; padding: 10px 12px; font-size: .84rem; color: var(--muted); display: grid; gap: 6px; }
+.help[hidden] { display: none; }
+.help p, .help ul { margin: 0; } .help ul { padding-left: 18px; display: grid; gap: 3px; }
+.help b { color: var(--ink); font-weight: 600; }
+[title] { text-decoration-color: var(--faint); }
+.bar > span:first-child, .kv > span, th[title], .big span { cursor: help; }
+details.why { margin-top: 4px; font-size: .8rem; }
+details.why summary { color: var(--gpu); cursor: pointer; width: max-content; list-style: none; }
+details.why summary::-webkit-details-marker { display: none; }
+details.why summary::before { content: "▸ "; } details.why[open] summary::before { content: "▾ "; }
+details.why div { margin-top: 4px; padding: 7px 10px; background: var(--panel-2); border-radius: 6px; color: var(--muted); }
+details.why div b { color: var(--ink); }
+.guide { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 18px; }
+.guide h3 { margin: 0 0 4px; font-size: .86rem; color: var(--ink); }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div><h1>Strata Live</h1><div class="meta" id="sub">Connecting…</div></div>
+    <div class="status"><span class="pill" id="p-up" title="Whether Strata answers on http://127.0.0.1:8080. Checked every second.">…</span><span class="pill" id="p-state" title="idle = waiting for a request · reading = taking in the prompt · generating = writing the reply. 'waiting' counts requests queued behind the current one.">idle</span><span class="pill" id="p-relay" hidden title="The timing relay is on: apps pointed at this port are timed request by request (see the Relay panel).">relay</span><button type="button" class="small" id="help-all" aria-pressed="false" title="Show or hide the explanations on every panel">Help</button><button type="button" class="small" id="bundle-btn" title="Packs recent events, incident recordings, settings (secrets hidden) and Strata's log tails into one zip for a bug report">Make diagnostics bundle</button></div>
+  </div>
+  <div class="meta" id="bundle-out" hidden></div>
+
+  <section class="panel help" id="h-guide" hidden>
+    <div class="head"><h2>How to read this page</h2><button type="button" class="small" id="help-close">Hide all help</button></div>
+    <div class="guide">
+      <div><h3>What this is</h3><p>Strata Live watches Strata (the local model server on port 8080), pi (the coding app) and your hardware, once a second. It never changes Strata. It only reads its status, its logs and pi's session files, and it writes its own logs to the <code>logs</code> folder.</p></div>
+      <div><h3>Colours</h3><p><span class="swatch" style="background:var(--hit)"></span>green = fine · <span class="swatch" style="background:var(--miss)"></span>orange = worth a look · <span class="swatch" style="background:var(--bad)"></span>red = a problem or near a limit · <span class="swatch" style="background:var(--gpu)"></span>blue = normal activity · <span class="swatch" style="background:var(--ssd)"></span>purple = reading a prompt or the SSD.</p></div>
+      <div><h3>Getting more detail</h3><p>Hover over any label, bar, number or column title for a short explanation. Every <b>?</b> opens the explainer for that panel. Under each event, <b>What this means</b> tells you whether to act and how.</p></div>
+      <div><h3>When something goes wrong</h3><ul><li>Look at <b>Errors and events</b> (Problems only).</li><li>Open the matching <b>Incident recording</b> and replay the minutes before it.</li><li>Click <b>Make diagnostics bundle</b> to get one zip to share in a bug report.</li></ul></div>
+      <div><h3>Words used here</h3><ul><li><b>Token</b>: a piece of a word, about ¾ of an English word.</li><li><b>Context</b>: everything the model sees at once: the whole conversation so far.</li><li><b>Compaction</b>: pi summarising old messages to free room in the context.</li><li><b>Experts</b>: the model's 24,576 small sub-networks; only a few run for each token.</li></ul></div>
+      <div><h3>Normal vs not</h3><ul><li>Writing speed about 30–40 tok/s, GPU at 85 °C or below, more than 400 MiB VRAM free: normal.</li><li>A <b>timeout</b> at "0 s" that pi retried: harmless.</li><li>The same request size repeating, or a reply repeating one phrase: a loop; stop it in pi (Esc).</li></ul></div>
+    </div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel">
+      <div class="ttl"><h2>What Strata is doing now</h2><button type="button" class="hbtn" data-help="h-now" aria-expanded="false" aria-label="Help: what Strata is doing now">?</button></div>
+      <div class="help" id="h-now" hidden>
+        <p>The line of text says the current step. <b>Reading the prompt</b> means taking in the conversation before answering; it is slow when nothing could be reused. <b>Thinking</b> is the model's hidden reasoning. <b>Answering</b> is the visible reply. <b>Writing a tool call</b> means it is asking pi to run something (edit a file, run a command).</p>
+        <p>The diagram shows where data is moving right now. Strata keeps every layer and the most-used "experts" on the <b>graphics card</b>. The other experts sit in <b>RAM</b> and either cross the PCIe slot to the card (orange dots) or run on the <b>processor</b>. A large lookup table is read from the <b>SSD</b> (purple). Green dots are words going to <b>pi</b>. Brighter boxes are busier.</p>
+      </div>
+      <div class="phase" id="phase">–</div>
+      <canvas id="scene" aria-label="Live diagram of data moving between the SSD, RAM, processor, graphics card and the app"></canvas>
+      <div class="note">Dots show real activity, refreshed every second: model output to the app (tokens/s), experts crossing PCIe from RAM (MB/s), lookup-table reads from the SSD (MB/s). Box brightness follows GPU and CPU load.</div>
+    </section>
+    <section class="panel">
+      <div class="ttl"><h2>Context of the current conversation</h2><button type="button" class="hbtn" data-help="h-ctx" aria-expanded="false" aria-label="Help: context">?</button></div>
+      <div class="help" id="h-ctx" hidden>
+        <p>The bar is how full the model's memory of this conversation is (prompt plus the reply so far), out of Strata's limit (131,072 tokens). The white mark is where <b>pi compacts</b>: past it, pi summarises older messages so the conversation fits. It is set by <code>reserveTokens</code> in <code>~/.pi/agent/settings.json</code> (now 32,768, so it compacts at about 98k).</p>
+        <p>The bar turns orange above 75% and red once past the compaction mark. Compaction on this local model takes several minutes because it writes a long summary. pi shows "compacting" meanwhile; that is not a hang.</p>
+        <p><b>tokens/s now</b>: writing speed this second. <b>written this reply</b>: tokens so far / the most this reply may write. <b>seconds in</b>: time since the request arrived.</p>
+      </div>
+      <div class="gauge" id="gauge" title="How much of the context limit this conversation uses"><div class="fill" id="g-fill"></div><div class="mark" id="g-pi" title="pi compacts here"></div></div>
+      <div class="gauge-lbl"><span id="g-used">–</span><span id="g-pi-lbl" title="When the conversation passes this size, pi summarises older messages (compaction)">pi compacts at –</span><span id="g-max" title="The most tokens Strata accepts in one conversation (--max-context)">limit –</span></div>
+      <div class="big">
+        <div><b id="b-tok">–</b><span title="How fast the model is writing this second. About 30–40 is normal here; much lower usually means the GPU is waiting on RAM or the SSD.">tokens/s now</span></div>
+        <div><b id="b-gen">–</b><span title="Tokens written in the reply so far / the most the app allows this reply (max_tokens). Reaching it cuts the reply off ('length').">written this reply</span></div>
+        <div><b id="b-el">–</b><span title="Seconds since this request reached Strata. pi gives up after 5 minutes of no data.">seconds in</span></div>
+      </div>
+      <canvas id="spark" aria-label="Writing speed over the last two minutes"></canvas>
+      <div class="gauge-lbl"><span>writing speed, last 2 minutes</span><span id="sp-max"></span></div>
+      <div class="kv" id="kv"></div>
+    </section>
+  </div>
+
+  <div class="grid3">
+    <section class="panel">
+      <div class="ttl"><h2>Hardware</h2><button type="button" class="hbtn" data-help="h-hw" aria-expanded="false" aria-label="Help: hardware">?</button></div>
+      <div class="help" id="h-hw" hidden>
+        <p>Live readings, once a second. A bar turns <b>orange</b> above 80% of its scale and <b>red</b> above 92%. The monitor raises a warning when one of these lasts 10 seconds:</p>
+        <ul><li><b>free VRAM</b> below 250 MiB</li><li><b>RAM</b> above 95%</li><li><b>GPU</b> at 85 °C or more</li></ul>
+        <p>On this machine, GPU load near 100% and RAM around 90% are normal while Strata works. It keeps about 40 GB of the model in RAM on purpose. Hover over a bar's name for what it means.</p>
+      </div>
+      <div class="bars" id="bars"></div>
+    </section>
+    <section class="panel">
+      <div class="ttl"><h2>Last requests</h2><button type="button" class="hbtn" data-help="h-req" aria-expanded="false" aria-label="Help: last requests">?</button></div>
+      <div class="help" id="h-req" hidden>
+        <p>Every message pi sends to Strata is one request, newest first. pi sends one per step, so a single answer that edits files and runs commands produces many requests.</p>
+        <p><b>Ended</b>:</p>
+        <ul><li><span class="tag ok">stop</span> / <span class="tag ok">tool_calls</span>: finished normally.</li><li><span class="tag warn">length</span>: cut off at the reply limit.</li><li><span class="tag warn">disconnect</span>: the app closed the connection, e.g. you pressed Esc.</li></ul>
+        <p>A high <b>Reused</b> share means Strata kept the conversation from last time and only had to read the new part. 0 reused on a big prompt means a slow full re-read (after compaction or a new chat). Hover over a column title for details.</p>
+      </div>
+      <div class="tablebox"><table><thead><tr><th title="When the request finished">Time</th><th title="How the reply ended: stop / tool_calls = normal; length = hit the reply limit; disconnect = the app hung up">Ended</th><th class="n" title="Size of the whole conversation sent to the model, in tokens">Prompt</th><th class="n" title="Prompt tokens Strata already had from the previous request and did not need to read again. Higher is faster.">Reused</th><th class="n" title="Tokens the model wrote: thinking, answer and tool calls together">Written</th><th class="n" title="Writing speed of this reply, in tokens per second">tok/s</th><th class="n" title="Share of the experts this reply needed that were already on the graphics card (the rest came from RAM over PCIe or ran on the processor)">On card</th><th class="n" title="Total time for the request: reading the prompt plus writing">Took</th></tr></thead><tbody id="reqs"></tbody></table></div>
+    </section>
+  </div>
+
+  <div class="grid3">
+    <section class="panel">
+      <div class="head"><div class="ttl"><h2>Writing speed by day</h2><button type="button" class="hbtn" data-help="h-speed" aria-expanded="false" aria-label="Help: writing speed by day">?</button></div><span class="meta">median tokens/s of replies of 100+ tokens</span></div>
+      <div class="help" id="h-speed" hidden>
+        <p>One bar per day and model. The bar is the median writing speed of that day's replies; very short replies are left out because they are noisy. Hover over a bar for the number of replies and how fast prompts were read.</p>
+        <p>Use it to see whether an engine update or a settings change made things faster or slower. Sampling penalties (<code>presence_penalty</code>) cost a few percent. Heat or another program using the graphics card can cost much more.</p>
+      </div>
+      <div id="speed"></div>
+      <p class="note" style="margin:0">A day more than 25% slower than the previous days (with at least 10 replies) is logged as a slowdown. Rebuilt from Strata's own logs the first time the monitor starts.</p>
+    </section>
+    <section class="panel" id="relay-panel">
+      <div class="head"><div class="ttl"><h2>Relay</h2><button type="button" class="hbtn" data-help="h-relay" aria-expanded="false" aria-label="Help: relay">?</button></div><span class="meta" id="relay-sub"></span></div>
+      <div class="help" id="h-relay" hidden>
+        <p>The relay is an optional pass-through on port 8090. pi talks to the relay, and the relay forwards to Strata. It records, per request:</p>
+        <ul><li><b>Answered</b>: how long until Strata replied.</li><li><b>First data</b>: when the first words arrived.</li><li><b>Longest silence</b>: the longest stretch with nothing sent.</li></ul>
+        <p>pi gives up after 300 s of silence, so silence turns orange at 60 s and red at 240 s. Requests that never reach the relay never reached Strata either.</p>
+      </div>
+      <div id="relay-body"></div>
+    </section>
+  </div>
+
+  <section class="panel" id="inc-panel">
+    <div class="head"><div class="ttl"><h2>Incident recordings</h2><button type="button" class="hbtn" data-help="h-inc" aria-expanded="false" aria-label="Help: incident recordings">?</button></div><span class="meta" id="inc-rec"></span></div>
+    <div class="help" id="h-inc" hidden>
+      <p>Click <b>Replay</b> to open a recording, then press <b>Play</b> or drag the slider through it second by second. The <span style="color:var(--bad)">red line</span> marks when the problem was detected. The white line is the second shown in the table below the chart.</p>
+      <p>Lines on the chart:</p>
+      <ul><li><b>blue</b>: writing speed</li><li><b>grey</b>: GPU load</li><li><b>orange</b>: free graphics memory, from 0 to 1 GB</li></ul>
+      <p>The strip along the bottom shows what Strata was doing: writing, reading a prompt, idle, or not answering.</p>
+      <p>Things to look for:</p>
+      <ul><li>Speed dropping while free VRAM hits 0: memory pressure.</li><li>A long blue stretch with "Written" climbing towards the limit: a runaway or looping reply.</li><li>Idle right at a pi timeout: the request never reached Strata.</li></ul>
+      <p>Recordings are saved in <code>logs\incidents</code>.</p>
+    </div>
+    <p class="note" style="margin:0">When something goes wrong (a timeout, an error, low graphics memory, a runaway reply), the monitor saves what Strata and the hardware did from 5 minutes before to 1 minute after. Pick one to replay it second by second.</p>
+    <div id="inc-list"></div>
+    <div id="replay" hidden>
+      <div class="head"><h2 id="rp-title">Replay</h2><button type="button" id="rp-close" class="small">Close replay</button></div>
+      <p class="meta" id="rp-text" style="margin:0"></p>
+      <canvas id="rp-chart" aria-label="Timeline of the incident: writing speed, GPU load and free graphics memory"></canvas>
+      <div class="legend-row"><span><i style="background:var(--gpu)"></i>tokens/s</span><span><i style="background:var(--muted)"></i>GPU load %</span><span><i style="background:var(--miss)"></i>free VRAM (0–1 GB)</span><span><i style="background:var(--bad)"></i>the problem</span><span class="band-key"><i style="background:#3b4f8f"></i>writing <i style="background:#5b3f86"></i>reading <i style="background:#1d2738"></i>idle <i style="background:var(--bad)"></i>not answering</span></div>
+      <div class="rp-controls">
+        <button type="button" id="rp-play" class="small">Play</button>
+        <input type="range" id="rp-slider" min="0" max="0" value="0" aria-label="Second of the recording">
+        <span class="mono" id="rp-time">–</span>
+      </div>
+      <div class="kv rp-kv" id="rp-kv"></div>
+      <div id="rp-events"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="head"><div class="ttl"><h2>Errors and events</h2><button type="button" class="hbtn" data-help="h-ev" aria-expanded="false" aria-label="Help: errors and events">?</button></div>
+      <div class="filters" id="filters">
+        <button type="button" data-f="problems" aria-pressed="true" title="Warnings and errors only">Problems only</button>
+        <button type="button" data-f="changes" aria-pressed="false" title="Settings changes, engine restarts, slowdowns and Windows events (crashes, driver resets, hardware errors)">Changes &amp; system</button>
+        <button type="button" data-f="all" aria-pressed="false" title="Everything, including one line per finished request">Everything</button>
+      </div>
+    </div>
+    <div class="help" id="h-ev" hidden>
+      <p>Everything the monitor noticed, newest first. Sources:</p>
+      <ul><li><b>strata</b>: the server and its logs</li><li><b>pi</b>: pi's session files</li><li><b>windows</b>: the system event log</li><li><b>config</b>: settings files</li><li><b>monitor</b>: Strata Live itself</li></ul>
+      <p>Levels: <span class="tag bad">error</span> = something failed · <span class="tag warn">warn</span> = worth a look · <span class="tag">info</span> = for the record.</p>
+      <p>Open <b>What this means</b> under any event for an explanation and what, if anything, to do. Hover over a count in the row of totals for the same. Every event is also written to <code>logs\events-&lt;date&gt;.log</code>.</p>
+    </div>
+    <div class="counts" id="counts"></div>
+    <div id="log"></div>
+    <div class="note" id="logdir"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const fmt = (n) => n == null ? "–" : Math.round(n).toLocaleString();
+  const tm = (ts) => { const d = new Date(ts * 1000); return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(); };
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let S = null, filter = "problems";
+  // only touch the DOM when the markup really changed, so hover tooltips and opened notes survive the 1 s refresh
+  const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
+
+  // ---------------- help texts
+  // what each event kind means and what to do about it; shown under events, on the totals and in incidents
+  const KIND_HELP = {
+    "timeout": "pi gave up on a request. If it says <b>0 s after it sent the request</b>, the request never reached Strata (a pi-side connection hiccup); pi retries by itself and you can ignore it unless it keeps happening. If pi waited 5 minutes, Strata was busy with a very long prompt or reply; replay the incident to see which.",
+    "context too long": "The conversation was bigger than Strata's limit (131,072 tokens), so Strata refused it. Start a new conversation, or make pi compact earlier with a larger <code>reserveTokens</code> in <code>~/.pi/agent/settings.json</code>.",
+    "reply cut at limit": "The reply hit its maximum length and was cut off (ended: length). If it was a <b>compaction summary</b>, pi's summary budget is too small: raise <code>reserveTokens</code>. If it was a huge <b>file write</b>, the file was probably not written; ask the model to write it in smaller parts or edit in place. If the text was repeating, it was a loop.",
+    "app hung up": "pi (or another app) closed the connection before the reply finished. Usually you pressed Esc, or the app timed out. Nothing to fix unless it happens without you stopping it.",
+    "aborted": "pi stopped the request: you pressed Esc or the request was cancelled. Normal.",
+    "cancelled": "Strata cancelled a request because the app went away. Normal after Esc.",
+    "pi compacted": "pi summarised the older part of the conversation to make room. Normal. On this local model it takes several minutes, and the next request re-reads the prompt from scratch, so it is slower once.",
+    "compaction failed": "pi tried to compact the conversation but the summary was cut off at its token cap, so it was thrown away and the conversation stays full. pi usually tries again a few minutes later, which is the loop. Each attempt costs 5&ndash;10 minutes. If you see several in a row, raise <code>reserveTokens</code> for this model in <code>~\\.pi\\agent\\settings.json</code> (the summary gets 0.8&times; that) &mdash; and ask before changing it.",
+    "conversation shortened": "The prompt suddenly got much smaller: pi compacted, or a new conversation began. Normal. The next request has nothing to reuse, so reading the prompt takes longer once. If this repeats every few minutes with the <b>same</b> prompt size, compaction is failing and looping: see <b>reply cut at limit</b>.",
+    "near context limit": "The conversation uses over 85% of the context limit. pi will compact soon. Nothing to do.",
+    "queue": "A request had to wait because Strata was busy with another one. This happens when two pi sessions or apps use Strata at once. Strata serves one at a time.",
+    "long request": "One request has run for over 10 minutes. Usually a very long reply or file write. Check that the reply is not repeating itself; if it is, stop it in pi with Esc.",
+    "runaway reply": "One reply has written more than 8,000 tokens and is still going. Often a whole file being written in one go (fine, just slow), sometimes a <b>loop</b> where the model repeats a phrase. If pi shows the same text over and over, press Esc and tell it to continue. Loops are rarer with the sampling defaults (presence_penalty) set in Strata's config.",
+    "slow tool call": "The model has been writing a single tool call (usually a file write) for over 5 minutes. A huge file or a loop is likely. Asking the model to write files in smaller pieces avoids it.",
+    "vram low": "Less than 250 MiB of graphics memory was free for 10 seconds. Strata can slow down or fail. Close other programs that use the GPU (browsers with video, games, other AI tools).",
+    "ram full": "RAM was more than 95% full for 10 seconds. Windows starts swapping to disk, which slows everything. Close large programs. Strata itself keeps about 40 GB of the model in RAM on purpose.",
+    "gpu hot": "The graphics card was at 85 °C or more for 10 seconds. Not harmful by itself, but cards slow themselves down when hotter. If it is constant: clean the fans, improve case airflow, or lower the card's power limit a little (e.g. with MSI Afterburner).",
+    "server": "Strata stopped (or started again) answering on port 8080. A stop followed by 'answering again' within a second is a harmless hiccup while it is busy. A long stop means Strata crashed or is restarting.",
+    "slowdown": "Today's typical writing speed is more than 25% below the previous days. Check what changed: an engine update, a settings change, heat, or another program using the GPU.",
+    "relay silence": "Through the relay, Strata sent nothing for 60 s (warning) or 240 s (serious) in the middle of a request. pi gives up at 300 s. Usually a very long prompt being read.",
+    "relay request": "One request that went through the timing relay, with its timings.",
+    "graphics driver reset": "Windows reset the graphics driver (the screen may have flickered). Strata's requests fail when this happens. Causes: overheating, an unstable overclock, or a driver problem. Update the NVIDIA driver and watch the GPU temperature.",
+    "graphics driver error": "The graphics driver reported an error in the Windows event log. One-off errors are often harmless; repeated ones point at the driver, heat or the card.",
+    "hardware error": "Windows recorded a hardware error (WHEA), e.g. from the PCIe slot, memory or processor. Repeated ones need a look: reseat the graphics card, update the BIOS, check the power supply.",
+    "windows low memory": "Windows warned that it is running out of memory. Close programs; Strata may slow down or be stopped.",
+    "unexpected shutdown": "The PC restarted without shutting down cleanly: a crash, power loss or reset. If it happens during Strata sessions, check GPU temperature, the power supply and for <b>hardware error</b> events around that time.",
+    "config changed": "A settings file Strata Live tracks changed: Strata's <code>strata-*.json</code>, the engine's BUILD.json, or pi's <code>models.json</code> / <code>settings.json</code>. The text shows what changed. Useful when behaviour changes after an edit. Secrets are shown as ***.",
+    "config tracking": "Strata Live started tracking these settings files for changes.",
+    "engine started": "Strata (re)started, with the settings shown.",
+    "incident saved": "The monitor saved a recording of the minutes around a problem. Find it under <b>Incident recordings</b> and press Replay.",
+    "started": "Strata Live itself started.",
+    "bundle made": "A diagnostics zip was made with the button at the top.",
+    "cleanup": "Strata Live deleted old log files or recordings to save space.",
+    "log error": "Strata wrote an error line in its own log. Read the text; if it repeats, it is worth reporting with a diagnostics bundle.",
+    "warning": "Strata wrote a warning line in its own log. Often informational; read the text.",
+    "error": "pi received an error from the model server. The text has the details.",
+    "unusual ending": "A request ended in an unusual way (not stop, tool call or length). Read the text; replay the incident if there is one.",
+    "request": "One finished request: prompt size, how much was reused, how much was written, speed and how it ended.",
+  };
+  const helpFor = (kind) => KIND_HELP[kind] || "";
+  const plain = (h) => h.replace(/<[^>]+>/g, "");
+  const why = (key, kind) => helpFor(kind) ? `<details class="why" data-k="${esc(key)}"${openWhy.has(key) ? " open" : ""}><summary>What this means</summary><div>${helpFor(kind)}</div></details>` : "";
+  const openWhy = new Set();
+  document.addEventListener("toggle", (e) => {
+    const d = e.target; if (!(d instanceof HTMLDetailsElement) || !d.classList.contains("why")) return;
+    d.open ? openWhy.add(d.dataset.k) : openWhy.delete(d.dataset.k);
+  }, true);
+  // per-panel help boxes and the Help button that opens/closes them all (remembered in this browser)
+  const helpBtns = () => document.querySelectorAll(".hbtn[data-help]");
+  function showHelp(id, on) {
+    const box = document.getElementById(id); if (box) box.hidden = !on;
+    document.querySelectorAll(`.hbtn[data-help="${id}"]`).forEach((b) => b.setAttribute("aria-expanded", String(on)));
+  }
+  function setAllHelp(on) {
+    helpBtns().forEach((b) => showHelp(b.dataset.help, on));
+    $("#h-guide").hidden = !on; $("#help-all").setAttribute("aria-pressed", String(on));
+    $("#help-all").textContent = on ? "Hide help" : "Help";
+    try { localStorage.setItem("sl-help", on ? "1" : "0"); } catch (e) {}
+  }
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest(".hbtn[data-help]"); if (!b) return;
+    showHelp(b.dataset.help, b.getAttribute("aria-expanded") !== "true");
+  });
+  $("#help-all").addEventListener("click", () => setAllHelp($("#help-all").getAttribute("aria-pressed") !== "true"));
+  $("#help-close").addEventListener("click", () => setAllHelp(false));
+  try { if (localStorage.getItem("sl-help") === "1") setAllHelp(true); } catch (e) {}
+
+  // ---------------- live scene
+  const cv = $("#scene"), cx = cv.getContext("2d");
+  let W = 0, H = 0;
+  function size() { const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; W = r.width; H = r.height; cv.width = W * d; cv.height = H * d; cx.setTransform(d, 0, 0, d, 0, 0); }
+  new ResizeObserver(size).observe(cv); size();
+  const N = () => ({
+    ssd: { x: W * .12, y: H * .78, w: W * .2, h: 54, label: "SSD", sub: "29 GB lookup table", col: "#c690ff" },
+    ram: { x: W * .12, y: H * .22, w: W * .2, h: 54, label: "RAM", sub: "all 24,576 experts", col: "#f3a73b" },
+    cpu: { x: W * .42, y: H * .22, w: W * .18, h: 54, label: "Processor", sub: "runs the other experts", col: "#f3a73b" },
+    gpu: { x: W * .5, y: H * .62, w: W * .3, h: 86, label: "Graphics card", sub: "every layer + hot experts", col: "#7d9bff" },
+    app: { x: W * .88, y: H * .62, w: W * .16, h: 54, label: "pi / app", sub: "receives the words", col: "#45d08a" },
+  });
+  const flows = [
+    { a: "ram", b: "gpu", key: "rx", col: "#f3a73b" },
+    { a: "ram", b: "cpu", key: "cpu", col: "#f3a73b" },
+    { a: "cpu", b: "gpu", key: "cpu", col: "#f3a73b" },
+    { a: "ssd", b: "gpu", key: "disk", col: "#c690ff" },
+    { a: "gpu", b: "app", key: "tok", col: "#45d08a" },
+  ];
+  const dots = [];
+  let acc = {};
+  function rates() {
+    const hw = (S && S.hardware) || {}, lv = (S && S.live) || {}, st = lv.state || "idle";
+    const gen = st === "generating", read = st && st !== "idle" && !gen;
+    return {
+      tok: gen ? Math.min(40, (lv.tok_s || 0)) : read ? 3 : 0,
+      rx: Math.min(30, (hw.gpu_pcie_rx_mb || 0) / 400),
+      cpu: st !== "idle" ? Math.min(20, (hw.cpu || 0) / 6) : 0,
+      disk: Math.min(15, (hw.disk_read_mb || 0) * 2 + (gen ? 1.5 : 0)),
+      gpu: (hw.gpu_util || 0) / 100, cpuLoad: (hw.cpu || 0) / 100,
+    };
+  }
+  function box(n, glow) {
+    cx.save();
+    cx.shadowColor = n.col; cx.shadowBlur = 24 * glow;
+    cx.fillStyle = "#182335"; cx.strokeStyle = n.col; cx.globalAlpha = 1; cx.lineWidth = 1 + glow * 1.5;
+    const x = n.x - n.w / 2, y = n.y - n.h / 2, r = 8;
+    cx.beginPath(); cx.roundRect ? cx.roundRect(x, y, n.w, n.h, r) : cx.rect(x, y, n.w, n.h); cx.fill(); cx.stroke();
+    cx.restore();
+    cx.fillStyle = "#e4eaf4"; cx.font = "600 13px Segoe UI, system-ui, sans-serif"; cx.textAlign = "center";
+    cx.fillText(n.label, n.x, n.y - 3);
+    cx.fillStyle = "#8d9ab2"; cx.font = "11px Segoe UI, system-ui, sans-serif";
+    cx.fillText(n.sub, n.x, n.y + 13);
+  }
+  let lastT = performance.now();
+  function tick(now) {
+    const dtS = Math.min(.1, (now - lastT) / 1000); lastT = now;
+    const nodes = N(), R = rates();
+    cx.clearRect(0, 0, W, H);
+    // paths
+    cx.strokeStyle = "#24314a"; cx.lineWidth = 1.5;
+    for (const f of flows) { const a = nodes[f.a], b = nodes[f.b]; cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke(); }
+    // spawn dots
+    for (const f of flows) {
+      const rate = R[f.key] || 0; acc[f.key + f.a] = (acc[f.key + f.a] || 0) + rate * dtS;
+      while (acc[f.key + f.a] >= 1) { acc[f.key + f.a] -= 1; dots.push({ f, k: 0, sp: .55 + Math.random() * .3 }); }
+    }
+    // move + draw dots
+    for (let i = dots.length - 1; i >= 0; i--) {
+      const d = dots[i]; d.k += dtS * d.sp; if (d.k >= 1) { dots.splice(i, 1); continue; }
+      const a = nodes[d.f.a], b = nodes[d.f.b], x = a.x + (b.x - a.x) * d.k, y = a.y + (b.y - a.y) * d.k;
+      cx.fillStyle = d.f.col; cx.globalAlpha = Math.min(1, (1 - d.k) * 3);
+      cx.beginPath(); cx.arc(x, y, 3.2, 0, Math.PI * 2); cx.fill(); cx.globalAlpha = 1;
+    }
+    if (dots.length > 600) dots.splice(0, dots.length - 600);
+    box(nodes.ssd, Math.min(1, R.disk / 6)); box(nodes.ram, Math.min(1, R.rx / 15));
+    box(nodes.cpu, R.cpuLoad); box(nodes.gpu, R.gpu); box(nodes.app, Math.min(1, R.tok / 20));
+    if (!S || !S.up) { cx.fillStyle = "rgba(12,18,28,.7)"; cx.fillRect(0, 0, W, H); cx.fillStyle = "#ff7a72"; cx.font = "600 15px Segoe UI, sans-serif"; cx.textAlign = "center"; cx.fillText("Strata is not running on 127.0.0.1:8080", W / 2, H / 2); }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---------------- sparkline
+  const sp = $("#spark"), sx = sp.getContext("2d");
+  function spark(samples) {
+    const r = sp.getBoundingClientRect(), d = devicePixelRatio || 1; sp.width = r.width * d; sp.height = r.height * d; sx.setTransform(d, 0, 0, d, 0, 0);
+    const w = r.width, h = r.height, v = samples.map((s) => s.tok_s || 0), mx = Math.max(10, ...v);
+    sx.clearRect(0, 0, w, h);
+    sx.strokeStyle = "#24314a"; sx.lineWidth = 1;
+    for (let g = 1; g < 4; g++) { sx.beginPath(); sx.moveTo(0, h * g / 4); sx.lineTo(w, h * g / 4); sx.stroke(); }
+    if (v.length < 2) return;
+    const X = (i) => i / (v.length - 1) * w, Y = (y) => h - 3 - y / mx * (h - 8);
+    sx.beginPath(); v.forEach((y, i) => i ? sx.lineTo(X(i), Y(y)) : sx.moveTo(X(i), Y(y)));
+    sx.lineTo(w, h); sx.lineTo(0, h); sx.closePath(); sx.fillStyle = "rgba(125,155,255,.18)"; sx.fill();
+    sx.beginPath(); v.forEach((y, i) => i ? sx.lineTo(X(i), Y(y)) : sx.moveTo(X(i), Y(y))); sx.strokeStyle = "#7d9bff"; sx.lineWidth = 1.8; sx.stroke();
+    sx.fillStyle = "#7d9bff"; sx.beginPath(); sx.arc(X(v.length - 1), Y(v[v.length - 1]), 3, 0, Math.PI * 2); sx.fill();
+    $("#sp-max").textContent = "top of chart " + Math.round(mx) + " tok/s";
+  }
+
+  // ---------------- render panels
+  function render() {
+    const e = S.engine || {}, lv = S.live || {}, hw = S.hardware || {}, hs = S.hardware_static || {};
+    $("#p-up").textContent = S.up ? "Strata running" : "Strata offline"; $("#p-up").className = "pill " + (S.up ? "up" : "down");
+    const st = lv.state || "idle";
+    $("#p-state").textContent = st + (lv.queued ? ` · ${lv.queued} waiting` : "");
+    $("#p-state").className = "pill " + (st === "generating" ? "gen" : st === "idle" ? "" : "read");
+    setHTML($("#sub"), S.up ? `<b title="The model Strata has loaded (from strata-&lt;model&gt;.json)">${esc(e.model || "?")}</b> · <span title="Strata engine version (engine\\BUILD.json)">engine ${esc(e.version || "?")}</span> · ${esc(hs.gpu_name || "")} · <span title="How many of the model's experts fit in the graphics card's expert cache; the rest come from RAM">${fmt(e.expert_slots)} experts on the card</span> · <span title="Graphics memory Strata left free when it started">${e.vram_free_mib ?? "?"} MiB VRAM free</span>${e.cvec ? ` · <span title="An experimental control vector that speeds the model up but changes its output a little (Strata measured +15% perplexity on code). Turn off with &quot;experimental_speed_projection&quot;: false in the sampling block of strata-&lt;model&gt;.json.">speed projection on</span>` : ""}` : "Waiting for Strata on 127.0.0.1:8080 …");
+    let phase = "Idle: waiting for a request.";
+    if (st === "generating") phase = "Writing" + (lv.phase ? ": " + lv.phase : "");
+    else if (st !== "idle") phase = (lv.phase || "Reading the prompt") + (lv.prompt_total ? ` · ${fmt(lv.prompt_read)} of ${fmt(lv.prompt_total)} tokens read` : "");
+    $("#phase").textContent = S.up ? phase : "Strata is not running.";
+    // context gauge
+    const ctx = e.max_context || 131072, last = (S.requests || [])[0] || {};
+    const used = st !== "idle" ? (lv.prompt_tokens || lv.prompt_total || 0) + (lv.generated || 0) : (last.prompt_tokens || 0) + (last.output_tokens || 0);
+    const pct = Math.min(100, used / ctx * 100), piAt = S.pi_compacts_at;
+    const fill = $("#g-fill"); fill.style.width = pct + "%"; fill.className = "fill" + (piAt && used > piAt ? " bad" : pct > 75 ? " warn" : "");
+    if (piAt) { $("#g-pi").style.left = (piAt / ctx * 100) + "%"; $("#g-pi-lbl").textContent = "pi compacts at " + fmt(piAt); }
+    $("#g-used").textContent = fmt(used) + " tokens (" + pct.toFixed(0) + "%)" + (st === "idle" ? " · last request" : "");
+    $("#g-max").textContent = "limit " + fmt(ctx);
+    $("#b-tok").textContent = st === "generating" ? (lv.tok_s || 0).toFixed(1) : "–";
+    $("#b-gen").textContent = st !== "idle" ? fmt(lv.generated) + (lv.max_tokens ? " / " + fmt(lv.max_tokens) : "") : "–";
+    $("#b-el").textContent = st !== "idle" ? fmt(lv.elapsed_s) : "–";
+    const t = S.totals || {};
+    setHTML($("#kv"), [
+      ["Requests since Strata started", fmt(t.requests), "How many requests Strata has finished since it was last started"],
+      ["Tokens written", fmt(t.output_tokens), "All tokens the model has written since Strata started (thinking, answers, tool calls)"],
+      ["Prompt tokens reused (not re-read)", t.prompt_tokens ? Math.round(100 * t.reused / t.prompt_tokens) + "%" : "–", "Share of prompt tokens Strata could take from its cache instead of reading again. High (90%+) is good; it drops after compaction or switching conversations."],
+      ["Guesses kept", t.drafts_offered ? Math.round(100 * t.drafts_accepted / t.drafts_offered) + "%" : "–", "Strata guesses several tokens ahead with a small draft layer and keeps the ones the model agrees with (speculative decoding). More kept = faster writing. The text is the same either way."],
+      ["Average writing speed", lv.tok_s_mean ? lv.tok_s_mean.toFixed(1) + " tok/s" : "–", "Average tokens per second while writing, since Strata started"],
+    ].map(([a, b, tip]) => `<span title="${esc(tip)}">${a}</span><b>${b}</b>`).join(""));
+    spark(S.samples || []);
+    // hardware
+    const gb = (b) => (b / 1073741824).toFixed(1);
+    const bars = [
+      ["GPU load", hw.gpu_util, 100, (hw.gpu_util ?? "–") + " %", "How busy the graphics card is. Near 100% while Strata writes is normal."],
+      ["VRAM", hw.gpu_mem_used, hw.gpu_mem_total, hw.gpu_mem_total ? gb(hw.gpu_mem_used) + " / " + gb(hw.gpu_mem_total) + " GB" : "–", "Graphics memory in use. Strata fills most of it on purpose; a warning fires if less than 250 MiB stays free for 10 s."],
+      ["GPU temp", hw.gpu_temp, 95, (hw.gpu_temp ?? "–") + " °C", "Graphics card temperature. A warning fires at 85 °C or more for 10 s; cards slow themselves down when hotter."],
+      ["GPU power", hw.gpu_power, hw.gpu_power_limit || 170, hw.gpu_power ? Math.round(hw.gpu_power) + " / " + Math.round(hw.gpu_power_limit) + " W" : "–", "Power the graphics card draws / its power limit. Running at the limit is normal under load and drives the temperature."],
+      ["PCIe to card", hw.gpu_pcie_rx_mb, 16000, hw.gpu_pcie_rx_mb != null ? fmt(hw.gpu_pcie_rx_mb) + " MB/s" : "–", "Data flowing from RAM to the graphics card: mostly experts that are not kept on the card. High while writing is normal; it is what limits speed."],
+      ["CPU load", hw.cpu, 100, hw.cpu != null ? Math.round(hw.cpu) + " %" : "–", "Processor load. Strata runs some experts on the processor, so 50–70% while writing is normal."],
+      ["RAM", hw.ram_used, hw.ram_total, hw.ram_total ? gb(hw.ram_used) + " / " + gb(hw.ram_total) + " GB" : "–", "Memory in use. Strata keeps about 40 GB of the model here, so ~90% is normal. A warning fires above 95% for 10 s (Windows starts swapping to disk)."],
+      ["SSD reads", hw.disk_read_mb, 500, hw.disk_read_mb != null ? hw.disk_read_mb.toFixed(1) + " MB/s" : "–", "Reads from disk, mostly Strata's lookup table. Usually low; spikes at start-up are normal."],
+    ];
+    // the bar rows are built once and then only updated, so their tooltips stay put
+    const barsEl = $("#bars");
+    if (barsEl.children.length !== bars.length) barsEl.innerHTML = bars.map(([n, , , , tip]) => `<div class="bar"><span title="${esc(tip)}">${n}</span><div class="t"><i></i></div><span class="v"></span></div>`).join("");
+    bars.forEach(([, v, m, txt], i) => {
+      const p = v != null && m ? Math.min(100, v / m * 100) : 0, row = barsEl.children[i], fillEl = row.querySelector("i");
+      fillEl.style.width = p + "%"; fillEl.style.background = p > 92 ? "var(--bad)" : p > 80 ? "var(--miss)" : "var(--gpu)";
+      row.querySelector(".v").textContent = txt;
+    });
+    // requests
+    const FINISH_TIP = { stop: "Finished normally", tool_calls: "Finished normally by asking pi to run a tool", length: "Cut off: reached the most tokens this reply was allowed (max_tokens)", disconnect: "The app closed the connection before the end (Esc, or the app timed out)" };
+    setHTML($("#reqs"), (S.requests || []).map((r) => {
+      const f = r.finish || "?", cls = f === "stop" || f === "tool_calls" ? "ok" : f === "length" || f === "disconnect" ? "warn" : "bad";
+      return `<tr><td>${new Date(r.time * 1000).toLocaleTimeString()}</td><td><span class="tag ${cls}" title="${esc(FINISH_TIP[f] || "Unusual ending")}">${esc(f)}</span></td><td class="n">${fmt(r.prompt_tokens)}</td><td class="n">${fmt(r.reused)}</td><td class="n">${fmt(r.output_tokens)}</td><td class="n">${(r.decode_tok_s || 0).toFixed(1)}</td><td class="n">${r.hit_rate != null ? Math.round(r.hit_rate * 100) + "%" : "–"}</td><td class="n">${(r.duration_s || 0).toFixed(0)} s</td></tr>`;
+    }).join("") || `<tr><td colspan="8">No requests yet.</td></tr>`);
+    // events
+    const CHANGE_KINDS = ["config changed", "config tracking", "engine started", "slowdown", "bundle made", "cleanup"];
+    const evs = (S.events || []).slice().reverse().filter((x) => filter === "all" ? true
+      : filter === "changes" ? (x.source === "config" || x.source === "windows" || CHANGE_KINDS.includes(x.kind))
+      : x.level !== "info");
+    setHTML($("#log"), evs.map((x) => `<div class="ev ${x.level}"><time>${tm(x.ts)}</time><span class="lv">${x.level}</span><div><b>${esc(x.kind)}</b><span class="src">${esc(x.source)}</span><p>${esc(x.text)}</p>${why(x.ts + "|" + x.kind, x.kind)}</div></div>`).join("") || `<div class="note" style="padding:10px 4px">No problems recorded. Switch to Everything to see each request.</div>`);
+    const c = S.counts || {}, show = ["timeout", "context too long", "reply cut at limit", "app hung up", "pi compacted", "compaction failed", "conversation shortened", "near context limit", "queue", "long request", "runaway reply", "slow tool call", "vram low", "ram full", "gpu hot", "server", "slowdown", "relay silence", "graphics driver reset", "graphics driver error", "hardware error", "windows low memory", "unexpected shutdown", "config changed", "log error", "warning"];
+    setHTML($("#counts"), show.filter((k) => c[k]).map((k) => `<span title="${esc(plain(helpFor(k)))}">${k}: <b>${c[k]}</b></span>`).join("") || "<span>Nothing counted yet.</span>");
+    $("#logdir").textContent = "Saved to " + (S.log_dir || "") + " (events-<date>.log and events.jsonl). Past pi errors from the last 48 hours are shown here but not written again.";
+    renderIncidents();
+    renderSpeed();
+    renderRelay();
+  }
+
+  // ---------------- speed history
+  let speedKey = "";
+  function renderSpeed() {
+    const sp = S.speed || {}, key = JSON.stringify(sp);
+    if (key === speedKey) return; speedKey = key;
+    const models = Object.keys(sp).filter((m) => sp[m].some((r) => r.tok));
+    if (!models.length) { $("#speed").innerHTML = `<div class="note">No replies recorded yet.</div>`; return; }
+    const mx = Math.max(10, ...models.flatMap((m) => sp[m].map((r) => r.tok || 0)));
+    $("#speed").innerHTML = models.map((m) => {
+      const rows = sp[m].filter((r) => r.tok);
+      return `<div class="sp-model"><div class="sp-name">${esc(m)}</div><div class="sp-bars">${rows.map((r) =>
+        `<div class="sp-day" title="${esc(r.day)}: ${r.tok} tok/s median of ${r.n} replies${r.pre ? `, reads prompts at ${r.pre} tok/s` : ""}"><span class="sp-v">${r.tok}</span><i style="height:${Math.max(3, r.tok / mx * 64)}px"></i><span class="sp-d">${esc(r.day.slice(5))}</span></div>`).join("")}</div></div>`;
+    }).join("");
+  }
+
+  // ---------------- relay
+  function renderRelay() {
+    const R = S.relay || {}, on = !!R.port;
+    $("#p-relay").hidden = !on; if (on) $("#p-relay").textContent = "relay :" + R.port;
+    $("#relay-sub").textContent = on ? `on: apps pointed at http://127.0.0.1:${R.port}/v1 are timed` : "off";
+    if (!on) {
+      setHTML($("#relay-body"), `<p class="note" style="margin:0">The relay sits between pi and Strata and times every request: when Strata answered, when the first data came, and the longest silence. It is the surest way to see why pi times out. Start the monitor with <code>start-strata-live-with-relay.bat</code>, then point pi's <code>baseUrl</code> at <code>http://127.0.0.1:8090/v1</code>. Strata itself is not changed.</p>`);
+      return;
+    }
+    const rows = [...(R.active || []).map((r) => ({ ...r, live: true })), ...(R.recent || []).slice().reverse()];
+    const now = S.now || Date.now() / 1000;
+    setHTML($("#relay-body"), `<div class="tablebox"><table><thead><tr><th title="When the request reached the relay">Start</th><th title="The API call pi made">Request</th><th class="n" title="HTTP status Strata returned (200 = OK)">Status</th><th class="n" title="Seconds until Strata sent its first reply headers">Answered</th><th class="n" title="Seconds until the first piece of the reply arrived">First data</th><th class="n" title="Longest stretch with nothing sent. pi gives up at 300 s; orange from 60 s, red from 240 s.">Longest silence</th><th class="n" title="Total time of the request">Took</th><th title="done = finished normally; anything else = it broke off">Ended</th></tr></thead><tbody>${rows.map((r) => {
+      const quiet = r.live ? now - (r.last_byte || r.start) : r.max_gap_s;
+      const qcls = quiet >= 240 ? "bad" : quiet >= 60 ? "warn" : "ok";
+      const ecls = r.live ? "" : r.ended === "done" ? "ok" : "bad";
+      return `<tr><td>${new Date(r.start * 1000).toLocaleTimeString()}</td><td>${esc(r.method)} ${esc(r.path)}</td><td class="n">${r.status ?? "–"}</td><td class="n">${r.headers_s ?? "–"} s</td><td class="n">${r.first_byte_s ?? "–"} s</td><td class="n"><span class="tag ${qcls}">${Math.round(quiet || 0)} s${r.live ? " now" : ""}</span></td><td class="n">${Math.round((r.end || now) - r.start)} s</td><td><span class="tag ${ecls}">${esc(r.live ? "running" : r.ended)}</span></td></tr>`;
+    }).join("") || `<tr><td colspan="8">No requests through the relay yet.</td></tr>`}</tbody></table></div>`);
+  }
+
+  // ---------------- diagnostics bundle
+  $("#bundle-btn").addEventListener("click", async () => {
+    const b = $("#bundle-btn"), out = $("#bundle-out");
+    b.disabled = true; b.textContent = "Packing…";
+    try {
+      const r = await fetch("/api/bundle", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      out.hidden = false;
+      out.innerHTML = `Bundle saved: <a href="/api/bundle/${encodeURIComponent(j.name)}">${esc(j.name)}</a> · ${esc(j.path)} · Your conversations are not included; settings secrets are replaced by ***.`;
+    } catch (e) { out.hidden = false; out.textContent = "The bundle could not be made: " + e.message; }
+    b.disabled = false; b.textContent = "Make diagnostics bundle";
+  });
+
+  // ---------------- incidents + replay
+  let incKey = "", RP = null, rpIdx = 0, rpTimer = null;
+  function renderIncidents() {
+    $("#inc-rec").textContent = S.recording ? "● recording a new incident…" : "";
+    const list = (S.incidents || []).slice().reverse();
+    const key = list.map((i) => i.name).join("|") + (RP ? RP.name : "");
+    if (key === incKey) return;
+    incKey = key;
+    $("#inc-list").innerHTML = list.map((i) => `<div class="inc${RP && RP.name === i.name ? " on" : ""}"><time>${tm(i.ts)}</time><div><b title="${esc(plain(helpFor(i.kind)))}">${esc(i.kind)}</b>${i.n_events > 1 ? ` <span class="src" title="Other events that happened inside the same recording">+${i.n_events - 1} more</span>` : ""}<p>${esc(i.text)}</p>${why("inc|" + i.name, i.kind)}</div><button type="button" class="small" data-inc="${esc(i.name)}" title="Open this recording and step through it second by second">Replay</button></div>`).join("")
+      || `<div class="note" style="padding:8px 4px">No incidents recorded yet. They appear here by themselves when something goes wrong.</div>`;
+  }
+  $("#inc-list").addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button[data-inc]"); if (!b) return;
+    b.textContent = "Loading…";
+    try {
+      const r = await fetch("/api/incident?name=" + encodeURIComponent(b.dataset.inc), { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      openReplay(await r.json());
+    } catch (e) { b.textContent = "Couldn't load"; return; }
+  });
+  function openReplay(inc) {
+    RP = inc; incKey = ""; stopPlay();
+    $("#replay").hidden = false;
+    $("#rp-title").textContent = "Replay: " + inc.trigger.kind + " · " + tm(inc.ts);
+    $("#rp-text").textContent = inc.trigger.text;
+    const s = $("#rp-slider"); s.max = Math.max(0, inc.samples.length - 1);
+    rpIdx = Math.max(0, inc.samples.findIndex((x) => x.t >= inc.ts)); s.value = rpIdx;
+    $("#rp-events").innerHTML = inc.events.map((x) => `<div class="ev ${x.level}"><time>${tm(x.ts)}</time><span class="lv">${x.level}</span><div><b>${esc(x.kind)}</b><span class="src">${esc(x.source)}</span><p>${esc(x.text)}</p>${why("rp|" + x.ts + "|" + x.kind, x.kind)}</div></div>`).join("");
+    drawReplay(); if (S) renderIncidents();
+    $("#replay").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function stopPlay() { if (rpTimer) clearInterval(rpTimer); rpTimer = null; $("#rp-play").textContent = "Play"; }
+  $("#rp-close").addEventListener("click", () => { stopPlay(); RP = null; $("#replay").hidden = true; incKey = ""; if (S) renderIncidents(); });
+  $("#rp-slider").addEventListener("input", (e) => { rpIdx = +e.target.value; drawReplay(); });
+  $("#rp-play").addEventListener("click", () => {
+    if (!RP) return;
+    if (rpTimer) return stopPlay();
+    if (rpIdx >= RP.samples.length - 1) rpIdx = 0;
+    $("#rp-play").textContent = "Pause";
+    rpTimer = setInterval(() => { if (rpIdx >= RP.samples.length - 1) return stopPlay(); rpIdx++; $("#rp-slider").value = rpIdx; drawReplay(); }, 80);
+  });
+  addEventListener("resize", () => RP && drawReplay());
+  function drawReplay() {
+    const c = $("#rp-chart"), g = c.getContext("2d"), r = c.getBoundingClientRect(), d = devicePixelRatio || 1;
+    c.width = r.width * d; c.height = r.height * d; g.setTransform(d, 0, 0, d, 0, 0);
+    const w = r.width, h = r.height, band = 14, top = 6, ch = h - band - top - 6, sm = RP.samples, n = sm.length;
+    g.clearRect(0, 0, w, h);
+    if (!n) return;
+    const t0 = sm[0].t, t1 = sm[n - 1].t || t0 + 1, X = (t) => (t - t0) / Math.max(1, t1 - t0) * w;
+    g.strokeStyle = "#24314a"; g.lineWidth = 1;
+    for (let k = 0; k <= 4; k++) { const y = top + ch * k / 4; g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    const tokMax = Math.max(10, ...sm.map((s) => (s.live && s.live.state === "generating" && s.live.tok_s) || 0));
+    const series = [
+      { col: "#8d9ab2", f: (s) => s.hw && s.hw.gpu_util != null ? s.hw.gpu_util / 100 : null },
+      { col: "#f3a73b", f: (s) => s.hw && s.hw.gpu_mem_total ? Math.min(1, (s.hw.gpu_mem_total - s.hw.gpu_mem_used) / 1073741824) : null },
+      { col: "#7d9bff", f: (s) => s.live && s.live.state === "generating" ? (s.live.tok_s || 0) / tokMax : 0 },
+    ];
+    for (const se of series) {
+      g.beginPath(); let on = false;
+      sm.forEach((s) => { const v = s.up ? se.f(s) : null; if (v == null) { on = false; return; } const x = X(s.t), y = top + ch - v * ch; on ? g.lineTo(x, y) : g.moveTo(x, y); on = true; });
+      g.strokeStyle = se.col; g.lineWidth = 1.7; g.stroke();
+    }
+    // state band
+    sm.forEach((s, i) => {
+      const nx = i < n - 1 ? X(sm[i + 1].t) : w, st = s.live && s.live.state;
+      g.fillStyle = !s.up ? "#ff7a72" : st === "generating" ? "#3b4f8f" : st && st !== "idle" ? "#5b3f86" : "#1d2738";
+      g.fillRect(X(s.t), h - band, Math.max(1, nx - X(s.t)), band);
+    });
+    // problem marker + cursor
+    g.fillStyle = "#ff7a72"; g.fillRect(X(RP.ts) - 1, top, 2, ch + 6);
+    const cur = sm[Math.min(rpIdx, n - 1)];
+    g.fillStyle = "#e4eaf4"; g.fillRect(X(cur.t) - 1, 0, 2, h);
+    const lbl = "top of chart: " + Math.round(tokMax) + " tok/s · 100% GPU · 1 GB free";
+    g.font = "11px Segoe UI, sans-serif"; g.textAlign = "right";
+    const lw = g.measureText(lbl).width;
+    g.fillStyle = "rgba(19,28,42,.9)"; g.fillRect(w - lw - 10, top + ch - 18, lw + 8, 16);
+    g.fillStyle = "#8d9ab2"; g.fillText(lbl, w - 6, top + ch - 6);
+    // details for the chosen second
+    const lv = cur.live || {}, hw = cur.hw || {}, gbv = (b) => b != null ? (b / 1073741824).toFixed(1) : "–";
+    const rel = Math.round(cur.t - RP.ts);
+    $("#rp-time").textContent = new Date(cur.t * 1000).toLocaleTimeString() + " (" + (rel >= 0 ? "+" : "") + rel + " s)";
+    const RP_TIP = {
+      "Strata": "idle, reading (the prompt) or generating (writing), or not answering at all",
+      "Doing": "The step within the request: reading the prompt, thinking, answering, or writing a tool call",
+      "Seconds into request": "Time since this request reached Strata",
+      "Written / limit": "Tokens written so far / the most this reply may write. Climbing steadily towards the limit for minutes often means a loop or a huge file write.",
+      "Prompt tokens": "Size of the conversation sent with this request",
+      "Waiting requests": "Requests queued behind this one",
+      "Tokens/s": "Writing speed at that second",
+      "GPU load": "Graphics card load at that second", "Free VRAM": "Free graphics memory; below 250 MiB is a warning",
+      "GPU temp": "Graphics card temperature; 85 °C or more is a warning", "RAM": "Memory in use; above 95% is a warning", "CPU load": "Processor load",
+    };
+    $("#rp-kv").innerHTML = [
+      ["Strata", cur.up ? (lv.state || "idle") : "not answering"], ["Doing", lv.phase || "–"],
+      ["Seconds into request", lv.elapsed_s ? fmt(lv.elapsed_s) : "–"], ["Written / limit", lv.generated ? fmt(lv.generated) + " / " + fmt(lv.max_tokens) : "–"],
+      ["Prompt tokens", fmt(lv.prompt_tokens || lv.prompt_total)], ["Waiting requests", lv.queued ?? "–"],
+      ["Tokens/s", lv.state === "generating" ? (lv.tok_s || 0).toFixed(1) : "–"], ["GPU load", hw.gpu_util != null ? hw.gpu_util + " %" : "–"],
+      ["Free VRAM", hw.gpu_mem_total ? Math.round((hw.gpu_mem_total - hw.gpu_mem_used) / 1048576) + " MiB" : "–"], ["GPU temp", hw.gpu_temp != null ? hw.gpu_temp + " °C" : "–"],
+      ["RAM", hw.ram_total ? gbv(hw.ram_used) + " / " + gbv(hw.ram_total) + " GB" : "–"], ["CPU load", hw.cpu != null ? Math.round(hw.cpu) + " %" : "–"],
+    ].map(([a, b]) => `<span title="${esc(RP_TIP[a] || "")}">${a}</span><b>${esc(b)}</b>`).join("");
+  }
+
+  $("#filters").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    filter = b.dataset.f; document.querySelectorAll("#filters button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    if (S) render();
+  });
+
+  async function poll() {
+    try { const r = await fetch("/api/state", { cache: "no-store" }); S = await r.json(); render(); }
+    catch (e) { S = { up: false }; setHTML($("#sub"), "The monitor itself is not running. Start start-strata-live.bat."); }
+    setTimeout(poll, 1000);
+  }
+  poll();
+})();
+</script>
+</body>
+</html>
