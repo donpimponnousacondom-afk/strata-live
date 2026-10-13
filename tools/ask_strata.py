@@ -31,6 +31,7 @@ def feed(rec: dict) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("message")
+    ap.add_argument("--file", help="add this text file's contents after the message (for long prompts)")
     ap.add_argument("--effort", default="none", choices=["none", "low", "medium", "high", "config"])
     ap.add_argument("--max", type=int, default=1024)
     ap.add_argument("--new", action="store_true", help="start a new conversation")
@@ -44,9 +45,14 @@ def main() -> int:
             msgs = json.load(open(conv_path, encoding="utf-8"))
         except ValueError:
             msgs = []
-    msgs.append({"role": "user", "content": a.message})
+    content = a.message
+    if a.file:
+        content += "\n\n" + open(a.file, encoding="utf-8").read()
+    msgs.append({"role": "user", "content": content})
     cid = uuid.uuid4().hex[:8]
-    feed({"id": cid, "ts": time.time(), "who": a.who, "type": "user", "text": a.message, "new": a.new,
+    feed({"id": cid, "ts": time.time(), "who": a.who, "type": "user",
+          "text": a.message + (f"  [+ {os.path.basename(a.file)}, {len(content) - len(a.message):,} characters]"
+                               if a.file else ""), "new": a.new,
           "turn": len(msgs) // 2 + 1})
     body = {"model": "strata", "messages": msgs, "stream": True, "max_tokens": a.max,
             "stream_options": {"include_usage": True}}
