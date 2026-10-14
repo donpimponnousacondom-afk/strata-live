@@ -354,8 +354,8 @@ class LcarsWindow:
         c.delete("all")
         self.alertable = []
         SW, BH = 150, 22
-        self.alertable += self.elbow_top(12, 12, SW, W - 220, 104, BH, ORANGE)
-        x = W - 212
+        self.alertable += self.elbow_top(12, 12, SW, W - 270, 104, BH, ORANGE)
+        x = W - 264
         for w, col in ((70, LILAC), (60, PEACH), (64, BLUE)):
             self.alertable += [self.rect(x, 104 - BH, x + w, 104, col)]
             x += w + 6

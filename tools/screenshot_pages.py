@@ -15,7 +15,7 @@ ROOT = os.path.dirname(HERE)
 PYW = r"D:\strata\.venv\Scripts\python.exe"
 
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "out", "pages")
-pages = [int(p) for p in (sys.argv[2] if len(sys.argv) > 2 else "1,2,3,4,5,6,7,8,9").split(",")]
+pages = [int(p) for p in (sys.argv[2] if len(sys.argv) > 2 else "1,2,3,4,5,6,7,8,9,10").split(",")]
 w, h = (sys.argv[3] if len(sys.argv) > 3 else "1280x780").split("x")
 os.makedirs(out, exist_ok=True)
 env = dict(os.environ, PYTHONIOENCODING="utf-8")

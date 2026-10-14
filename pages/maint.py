@@ -91,7 +91,7 @@ class MaintPage(Page):
         f = self.folder
         info = [("PLACE", w.sl.LOG_DIR), ("SIZE", f"{(f.get('size') or 0) / 1e6:.1f} MB in {f.get('files', 0):,} files"),
                 ("OLDEST", dt.datetime.fromtimestamp(f["oldest"]).strftime("%Y-%m-%d") if f.get("oldest") else "—"),
-                ("CONFIG COPIES", f"{f.get('config_backups', 0)} in backups\\config (made before each saved change)")]
+                ("CONFIG COPIES", f"{f.get('config_backups', 0)} in backups\\config")]
         y += 30
         for k, v in info:
             w.text(lx0, y, k, w.f_tiny, TAN)
@@ -106,14 +106,14 @@ class MaintPage(Page):
             nsamp = len(w.sl.samples)
         tb = f.get("tracebacks", 0)
         rows = [
-            ("VERSION", f"CONSOLE {VERSION} · WATCHERS (STRATA LIVE) {w.sl.VERSION}"),
+            ("VERSION", f"CONSOLE {VERSION} · WATCHERS {w.sl.VERSION}"),
             ("RUNNING FOR", f"{(time.time() - STARTED) / 60:.0f} MIN"),
             ("THREADS", f"{len(names)} running"),
             ("EVENTS IN MEMORY", f"{nev:,} · {nsamp:,} SENSOR SAMPLES"),
             ("REQUESTS TRACKED", f"{len(w.an.reqs):,}"),
             ("ERRORS IN MONITOR.LOG", f"{tb}" + (" · SEE LOGS\\MONITOR.LOG" if tb else "")),
             ("STRATA", f"{w.sl.STRATA_URL} · {'ANSWERING' if s.get('up') else 'NOT ANSWERING'}"),
-            ("PANEL CONTROLS", "ON CLICK ONLY · TWO CLICKS FOR CHANGES · LOGGED TO TUNING.JSONL"),
+            ("PANEL CONTROLS", "ON CLICK ONLY · TWO CLICKS · LOGGED"),
         ]
         y = ry0 + 32
         for k, v in rows:

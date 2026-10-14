@@ -65,14 +65,14 @@ class CommsPage(Page):
             (f"{sess.get('assistant', 0):,}", "REPLIES", BLUE, False),
             (f"{sess.get('edit_misses', 0)}", "EDIT MISSES", PEACH, sess.get("edit_misses", 0) >= 10),
             (f"{sum(te.values())}", "TOOL ERRORS", GOLD, False),
-            (f"{leaks}", "THINKING LEAKS", LILAC, leaks > 0),
+            (f"{leaks}", "THINK LEAKS", LILAC, leaks > 0),
         ]
         w.tiles(rx0, ry0 + 30, rx1, tiles)
         tiles2 = [
             (f"{sess.get('replies_cut', 0)}", "REPLIES CUT", ORANGE, sess.get("replies_cut", 0) > 0),
-            (f"{timeouts}", "TIMEOUTS · 24 H", RED_HI if timeouts else GREEN, False),
+            (f"{timeouts}", "TIMEOUTS 24H", RED_HI if timeouts else GREEN, False),
             (f"{sess.get('tool_calls', 0):,}", "TOOL CALLS", SKY, False),
-            (fmt_k(sess.get("after_compaction")) if sess.get("after_compaction") else "—", "AFTER COMPACTING",
+            (fmt_k(sess.get("after_compaction")) if sess.get("after_compaction") else "—", "AFTER COMP",
              GREEN, False),
         ]
         w.tiles(rx0, ry0 + 96, rx1, tiles2)

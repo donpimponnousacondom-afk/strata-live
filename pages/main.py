@@ -118,22 +118,22 @@ class MainPage(Page):
     def draw_context(self, s) -> None:
         x0, y0, x1, y1 = self.context_r
         eng = s.get("engine") or {}
-        ctx_max = eng.get("max_context") or 1
+        ctx_max = eng.get("max_context") or 0
         cur, trig = s.get("context") or 0, s.get("trigger")
         self.w.text(x0, y0 + 8, "CONVERSATION", self.w.f_lab, BLUE)
-        self.w.text(x1, y0 + 8, f"{cur:,} / {ctx_max:,} TOKENS", self.w.f_small, INK, anchor="e")
+        self.w.text(x1, y0 + 8, f"{cur:,} / {ctx_max:,} TOKENS" if ctx_max else f"{cur:,} TOKENS · LIMIT UNKNOWN", self.w.f_small, INK, anchor="e")
         by0, by1 = y0 + 22, y0 + 42
         nseg = 40
         segw = (x1 - x0) / nseg
-        lit = round(min(1.0, cur / ctx_max) * nseg)
-        tseg = trig / ctx_max * nseg if trig else None
+        lit = round(min(1.0, cur / ctx_max) * nseg) if ctx_max else 0
+        tseg = trig / ctx_max * nseg if trig and ctx_max else None
         for k in range(nseg):
             col = GRID
             if k < lit:
                 col = RED_HI if tseg and k >= tseg else GOLD if tseg and k >= tseg - 3 else BLUE
             self.c.create_rectangle(x0 + k * segw + 1, by0, x0 + (k + 1) * segw - 2, by1, fill=col, outline="",
                                     tags=("dyn",))
-        if trig:
+        if trig and ctx_max:
             tx = x0 + (x1 - x0) * trig / ctx_max
             self.c.create_polygon(tx - 6, by1 + 10, tx + 6, by1 + 10, tx, by1 + 2, fill=RED_HI, outline="",
                                   tags=("dyn",))
