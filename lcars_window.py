@@ -27,6 +27,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 
 import strata_control as ctl
+from lcars_aa import Painter
 from lcars_theme import (BG, BLUE, CORE_AMBER, CORE_DEAD, CORE_DIM, CORE_LIT, COIL_CACHE, COIL_MISS, COIL_PCIE, GOLD,
                          GREEN, GRID, INK, LILAC, MUTED, ORANGE, PEACH, REALIGN_GOLD, RED, RED_HI, SKY, TAN,
                          TRIAL_GREEN, VIOLET, coil_mix, mix)
@@ -76,9 +77,14 @@ class LcarsWindow:
         self.f_big = (cond, 22)
         self.f_huge = (cond, 30)
         self._fonts: dict = {}
+        self._measured: dict = {}               # (text, font) -> width in px
+        self._fitted: dict = {}                 # (text, font, room) -> the text as fit() shortens it
         self.c = tk.Canvas(self.root, bg=BG, highlightthickness=0)
         self.c.pack(fill="both", expand=True)
+        self.aa = Painter(self.c)               # anti-aliased curves: Tk's own ovals, arcs and polygons have none
         self.W = self.H = 0
+        self._resize_job = None
+        self._built_at = 0.0
         self.L: dict = {}
         self.rings: list = []
         self.ring_cols: dict = {}
@@ -117,13 +123,7 @@ class LcarsWindow:
         return self.c.create_rectangle(x0, y0, x1, y1, fill=fill, outline=outline, tags=tags)
 
     def pill(self, x0, y0, x1, y1, fill, tags=("static",), left=True, right=True):
-        r = (y1 - y0) / 2
-        ids = [self.rect(x0 + (r if left else 0), y0, x1 - (r if right else 0), y1, fill, tags)]
-        if left:
-            ids.append(self.c.create_oval(x0, y0, x0 + 2 * r, y1, fill=fill, outline="", tags=tags))
-        if right:
-            ids.append(self.c.create_oval(x1 - 2 * r, y0, x1, y1, fill=fill, outline="", tags=tags))
-        return ids
+        return [i for i in self.aa.pill(x0, y0, x1, y1, fill, tags, left, right) if i]
 
     def text(self, x, y, s, font, fill=INK, anchor="w", tags=("dyn",), width=None):
         kw = {"width": width} if width else {}
@@ -135,29 +135,46 @@ class LcarsWindow:
         return self._fonts[font]
 
     def measure(self, s, font) -> int:
-        return self.font(font).measure(s)
+        # every Font.measure is a round trip into Tk, and the pages measure the same labels each second
+        key = (s, font)
+        w = self._measured.get(key)
+        if w is None:
+            if len(self._measured) > 20000:
+                self._measured.clear()
+            w = self._measured[key] = self.font(font).measure(s)
+        return w
 
     def fit(self, s: str, font, room: float) -> str:
-        f = self.font(font)
-        if f.measure(s) <= room:
-            return s
-        lo, hi = 0, len(s)
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            if f.measure(s[:mid] + "…") <= room:
-                lo = mid
-            else:
-                hi = mid - 1
-        return s[:lo] + "…"
+        key = (s, font, room)
+        out = self._fitted.get(key)
+        if out is not None:
+            return out
+        if len(self._fitted) > 5000:
+            self._fitted.clear()
+        if self.measure(s, font) <= room:
+            out = s
+        else:
+            lo, hi = 0, len(s)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                if self.measure(s[:mid] + "…", font) <= room:
+                    lo = mid
+                else:
+                    hi = mid - 1
+            out = s[:lo] + "…"
+        self._fitted[key] = out
+        return out
 
     def elbow_top(self, x0, y0, sw, x1, y1, bh, color, r=20, R=44):
+        """The sweep from the sidebar into the top bar: the outer corner (radius R) and the inner fillet (radius r)
+        are anti-aliased pieces that meet the straight parts on whole pixels."""
         t = ("static",)
-        ids = [self.rect(x0, y0, x0 + sw, y1 - R + 1, color, t),
-               self.rect(x0 + R - 1, y1 - R, x0 + sw + r, y1, color, t),
-               self.rect(x0 + R - 1, y1 - bh, x1, y1, color, t),
-               self.c.create_arc(x0, y1 - 2 * R, x0 + 2 * R, y1, start=180, extent=90, fill=color, outline="",
-                                 style="pieslice", tags=t)]
-        self.c.create_oval(x0 + sw, y1 - bh - 2 * r, x0 + sw + 2 * r, y1 - bh, fill=BG, outline="", tags=t)
+        aa = self.aa
+        ids = [self.rect(x0, y0, x0 + sw, y1 - R, color, t),
+               self.rect(x0 + R, y1 - R, x0 + sw, y1, color, t),
+               self.rect(x0 + sw, y1 - bh, x1, y1, color, t),
+               aa.corner(x0 + R, y1 - R, R, x0, y1 - R, x0 + R, y1, color, t),
+               aa.corner(x0 + sw + r, y1 - bh - r, r, x0 + sw, y1 - R, x0 + sw + r, y1 - bh, color, t, inside=False)]
         return ids
 
     def header(self, x0, y, x1, label, color, tags=("static",)):
@@ -166,7 +183,7 @@ class LcarsWindow:
         w = self.measure(label, self.f_head)
         if x0 + 44 + w < x1 - 20:
             self.rect(x0 + 44 + w, y + 7, x1 - 9, y + 11, color, tags)
-            self.c.create_oval(x1 - 18, y, x1, y + 18, fill=color, outline="", tags=tags)
+            self.aa.oval(x1 - 18, y, x1, y + 18, color, tags)
 
     # ------------------------------------------------------------ widgets for the pages (all redrawn each second)
     def on(self, tag: str, fn) -> tuple:
@@ -233,7 +250,7 @@ class LcarsWindow:
             self.c.create_rectangle(kx - 3, ty0 - 4, kx + 3, ty1 + 4, fill="#ffffff", outline="", tags=tags)
         if marker is not None and hi > lo:
             mx = x0 + (x1 - x0) * max(0.0, min(1.0, (marker - lo) / (hi - lo)))
-            self.c.create_polygon(mx - 5, ty1 + 10, mx + 5, ty1 + 10, mx, ty1 + 4, fill=TAN, outline="", tags=tags)
+            self.aa.polygon((mx - 5, ty1 + 10, mx + 5, ty1 + 10, mx, ty1 + 4), TAN, tags, erode=0.4)
         if note:                                    # beside the label, so a stack of sliders stays compact
             lw = self.measure(label, self.f_lab) + 10
             room = x1 - x0 - lw - self.measure(shown, self.f_lab) - 14
@@ -292,20 +309,18 @@ class LcarsWindow:
                 if fill and si == 0:
                     c.create_polygon(pts[0], py1, *pts, pts[-2], py1, fill=mix(BG, col, 0.2), outline="",
                                      tags=("dyn",))
-                c.create_line(*pts, fill=col, width=2, tags=("dyn",))
-                c.create_oval(pts[-2] - 3, pts[-1] - 3, pts[-2] + 3, pts[-1] + 3, fill=col, outline="", tags=("dyn",))
+                self.aa.line(pts, 2.25, col, ("dyn",))     # anti-aliased 2.25 px reads like Tk's hard 2 px
+                self.aa.oval(pts[-2] - 3, pts[-1] - 3, pts[-2] + 3, pts[-1] + 3, col, ("dyn",))
         return top
 
     def gauge(self, cx, cy, r, frac, color, label, value, hot=False):
         """A round gauge: a 270° segmented arc, the value in the middle."""
-        c = self.c
         n = 27
         lit = round(max(0.0, min(1.0, frac or 0)) * n)
         for k in range(n):
             a0 = 225 - k * 10
             col = (RED_HI if hot else color) if k < lit else GRID
-            c.create_arc(cx - r, cy - r, cx + r, cy + r, start=a0 - 8, extent=8, style="arc", width=9, outline=col,
-                         tags=("dyn",))
+            self.aa.arc(cx, cy, r, a0 - 8, 8, 9, col, ("dyn",))
         self.text(cx, cy - 2, value, self.f_big, RED_HI if hot else INK, anchor="center")
         self.text(cx, cy + r - 4, label, self.f_tiny, color, anchor="center")
 
@@ -334,6 +349,15 @@ class LcarsWindow:
         if (e.width, e.height) == (self.W, self.H):
             return
         self.W, self.H = e.width, e.height
+        # a drag sends a resize every few ms and a rebuild takes longer: rebuild at most every 50 ms and once
+        # after the last one, instead of queueing one rebuild per event
+        if self._resize_job is None:
+            wait = max(0, int(50 - (time.time() - self._built_at) * 1000))
+            self._resize_job = self.root.after(wait, self._resized)
+
+    def _resized(self) -> None:
+        self._resize_job = None
+        self._built_at = time.time()
         self.build_static()
         self.draw_dynamic()
 
@@ -352,6 +376,7 @@ class LcarsWindow:
         if not W:
             return
         c.delete("all")
+        self.aa.prune()
         self.alertable = []
         SW, BH = 150, 22
         self.alertable += self.elbow_top(12, 12, SW, W - 270, 104, BH, ORANGE)
@@ -385,7 +410,7 @@ class LcarsWindow:
         px0, py0, px1, py1 = self.L["P"]
         self.header(px0, py0, px1, f"{pg.code} · {pg.title}", pg.color)
         pg.build((px0, py0 + 32, px1, py1))
-        self._fills = {i: c.itemcget(i, "fill") for i in self.alertable}
+        self._fills = {i: self.aa.color_of(i) or c.itemcget(i, "fill") for i in self.alertable}
         self._alert_shown = None
 
     def build_core(self) -> None:
@@ -396,19 +421,19 @@ class LcarsWindow:
         cy = (top + bot) / 2
         self.L["core"] = (cx, top, bot, cy)
         t = ("static",)
-        self.orbit = c.create_oval(cx - 86, cy - 46, cx + 86, cy + 46, outline=GREEN, width=2, tags=t)
+        aa = self.aa
+        ch_h = 70
+        self.halo = aa.glow(cx - 56, cy - ch_h / 2, cx + 56, cy + ch_h / 2, 22, 0.55, CORE_DIM, t)
+        self.orbit = aa.oval_ring(cx - 85, cy - 45, cx + 85, cy + 45, 2.4, GREEN, t)   # Tk drew the 2 px inside
         self.field = [c.create_line(cx - 58, top + 10, cx - 58, bot - 10, width=3, dash=(6, 4), fill=GREEN, tags=t),
                       c.create_line(cx + 58, top + 10, cx + 58, bot - 10, width=3, dash=(6, 4), fill=GREEN, tags=t)]
-        c.create_polygon(cx - 44, top - 26, cx + 44, top - 26, cx + 30, top, cx - 30, top, fill=ORANGE, outline="",
-                         tags=t)
-        c.create_polygon(cx - 30, bot, cx + 30, bot, cx + 44, bot + 26, cx - 44, bot + 26, fill=PEACH, outline="",
-                         tags=t)
+        aa.polygon((cx - 44, top - 26, cx + 44, top - 26, cx + 30, top, cx - 30, top), ORANGE, t)
+        aa.polygon((cx - 30, bot, cx + 30, bot, cx + 44, bot + 26, cx - 44, bot + 26), PEACH, t)
         self.inj_top = c.create_rectangle(cx - 22, top - 20, cx + 22, top - 6, fill=CORE_DIM, outline="", tags=t)
         self.inj_bot = c.create_rectangle(cx - 22, bot + 6, cx + 22, bot + 20, fill=CORE_DIM, outline="", tags=t)
-        ch_h = 70
-        self.chamber = [c.create_oval(cx - 56, cy - ch_h / 2, cx + 56, cy + ch_h / 2, fill=CORE_DIM, outline=SKY,
-                                      width=2, tags=t),
-                        c.create_oval(cx - 30, cy - 18, cx + 30, cy + 18, fill=CORE_DIM, outline="", tags=t)]
+        self.chamber = [aa.oval(cx - 56, cy - ch_h / 2, cx + 56, cy + ch_h / 2, CORE_DIM, t),
+                        aa.oval(cx - 30, cy - 18, cx + 30, cy + 18, CORE_DIM, t)]
+        aa.oval_ring(cx - 55, cy - ch_h / 2 + 1, cx + 55, cy + ch_h / 2 - 1, 2.4, SKY, t)
         self.rings = []
         gap, rh = 6, 13
         n = max(5, int((cy - ch_h / 2 - top - 8) // (rh + gap)))
@@ -437,8 +462,8 @@ class LcarsWindow:
             ex = tx + w if side == "w" else tx - w
             bx = px - 14 if side == "w" else px + 14
             c.create_line(ex, ty, bx, ty, bx, py, px, py, fill=col, width=2, tags=t)
-            c.create_oval(ex - 4, ty - 4, ex + 4, ty + 4, fill=col, outline="", tags=t)
-            c.create_oval(px - 3, py - 3, px + 3, py + 3, fill=col, outline="", tags=t)
+            aa.oval(ex - 4, ty - 4, ex + 4, ty + 4, col, t)
+            aa.oval(px - 3, py - 3, px + 3, py + 3, col, t)
 
     # ------------------------------------------------------------ the data layer (once a second)
     def draw_dynamic(self) -> None:
@@ -446,6 +471,7 @@ class LcarsWindow:
             return
         c = self.c
         c.delete("dyn")
+        self.aa.prune()
         keep = self.drag["tag"] if self.drag else None
         self.handlers = {k: v for k, v in self.handlers.items() if k == keep}
         with self.an.lock:
@@ -531,7 +557,8 @@ class LcarsWindow:
                 self.text(x1 - (16 if active else 8), y1 - 8, pg.sub, self.f_tiny, mix(BG, col, 0.3), anchor="e",
                           tags=tags)
             if self.dept_alert[i] and blink:
-                self.c.create_oval(x0 + 8, y1 - 20, x0 + 20, y1 - 8, fill=RED_HI, outline=BG, width=2, tags=tags)
+                self.aa.oval(x0 + 7, y1 - 21, x0 + 21, y1 - 7, BG, tags)
+                self.aa.oval(x0 + 9, y1 - 19, x0 + 19, y1 - 9, RED_HI, tags)
 
     def draw_core_labels(self, s, eng, live, hw) -> None:
         last = s.get("last_request") or {}
@@ -570,12 +597,12 @@ class LcarsWindow:
                 sym, mc = {"ok": ("✓", GREEN), "warn": ("!", GOLD), "bad": ("✕", RED_HI)}[marks[name]]
                 w = self.measure(name, self.f_lab)
                 mx_ = tx + w + 26 if side == "w" else tx - w - 26
-                self.c.create_oval(mx_ - 9, ty - 9, mx_ + 9, ty + 9, fill=mc, outline="", tags=("dyn",))
+                self.aa.oval(mx_ - 9, ty - 9, mx_ + 9, ty + 9, mc, ("dyn",))
                 self.text(mx_, ty, sym, self.f_lab, BG, anchor="center")
         fcol = GREEN if free is None or free >= 400 else GOLD if free >= self.sl.VRAM_LOW_MIB else RED_HI
         for f in self.field:
             self.c.itemconfigure(f, fill=fcol)
-        self.c.itemconfigure(self.orbit, outline=fcol)
+        self.aa.recolor(self.orbit, fcol)
         # the coils' colours: the last request's mix, spread evenly over the rings
         if mx != self.ring_mix:
             self.ring_mix = mx
@@ -636,7 +663,7 @@ class LcarsWindow:
             return "queued"
         return st if st in ("generating", "reading", "idle") else "idle"
 
-    # ------------------------------------------------------------ animation (20 per second)
+    # ------------------------------------------------------------ animation (30 per second)
     def animate(self) -> None:
         try:
             now = time.time()
@@ -693,8 +720,10 @@ class LcarsWindow:
             util = (hw.get("gpu_util") or 0) / 100 if speed else 0
             glow = 0.25 + 0.75 * util * (0.8 + 0.2 * math.sin(now * 6))
             if self.chamber:
-                self.c.itemconfigure(self.chamber[0], fill=mix(CORE_DIM, RED_HI if alert else SKY, glow * 0.6))
-                self.c.itemconfigure(self.chamber[1], fill=mix(CORE_DIM, "#ffffff", glow))
+                hue = RED_HI if alert else SKY
+                self.aa.recolor(self.chamber[0], mix(CORE_DIM, hue, glow * 0.6))
+                self.aa.recolor(self.chamber[1], mix(CORE_DIM, "#ffffff", glow))
+                self.aa.recolor(self.halo, mix(BG, hue, 0.15 + 0.45 * glow if speed else 0.08))
             pulse = 0.5 + 0.5 * math.sin(now * 8)
             if hasattr(self, "inj_top"):
                 self.c.itemconfigure(self.inj_top, fill=mix(CORE_DIM, CORE_AMBER, pulse if st in ("reading", "realign")
@@ -716,12 +745,12 @@ class LcarsWindow:
             if on != getattr(self, "_alert_shown", None):
                 self._alert_shown = on
                 for item in self.alertable:
-                    self.c.itemconfigure(item, fill=RED if on else self._fills.get(item, ORANGE))
+                    self.aa.recolor(item, RED if on else self._fills.get(item, ORANGE))
             self.root.title(("ALERT ▸ " if alert else "") + self.title)
         except Exception:
             import traceback
             print(traceback.format_exc(), flush=True)
-        self.root.after(50, self.animate)
+        self.root.after(33, self.animate)
 
     # ------------------------------------------------------------ input
     def _target(self, e):

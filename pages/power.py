@@ -29,8 +29,7 @@ class PowerPage(Page):
         w = self.w
         flow = min(1.0, (mbs or 0) / 1500)
         self.c.create_line(x, y0, x, y1, fill=mix(GRID, col, 0.25 + 0.75 * flow), width=6 + 6 * flow, tags=("dyn",))
-        self.c.create_polygon(x - 9, y1 - 10, x + 9, y1 - 10, x, y1, fill=mix(GRID, col, 0.3 + 0.7 * flow),
-                              outline="", tags=("dyn",))
+        w.aa.polygon((x - 9, y1 - 10, x + 9, y1 - 10, x, y1), mix(GRID, col, 0.3 + 0.7 * flow), ("dyn",))
         w.text(x + 16, (y0 + y1) / 2, f"{label} {mbs or 0:,.0f} MB/S", w.f_tiny, INK if flow > 0.02 else MUTED)
 
     def draw(self, s) -> None:

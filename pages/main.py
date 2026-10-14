@@ -135,15 +135,14 @@ class MainPage(Page):
                                     tags=("dyn",))
         if trig and ctx_max:
             tx = x0 + (x1 - x0) * trig / ctx_max
-            self.c.create_polygon(tx - 6, by1 + 10, tx + 6, by1 + 10, tx, by1 + 2, fill=RED_HI, outline="",
-                                  tags=("dyn",))
+            self.w.aa.polygon((tx - 6, by1 + 10, tx + 6, by1 + 10, tx, by1 + 2), RED_HI, ("dyn",), erode=0.4)
             left = trig - cur
             self.w.text(tx, by1 + 18, f"COMPACTION AT {trig:,}" + (f" · {left:,} TO GO" if left > 0 else ""),
                         self.w.f_tiny, RED_HI if left < 5000 else MUTED, anchor="e" if tx > (x0 + x1) / 2 else "w")
 
     def draw_duty(self, s) -> None:
         x0, y0, x1, y1 = self.duty_r
-        c = self.c
+        c, aa = self.c, self.w.aa
         h = s.get("hour") or {}
         busy, total = h.get("busy") or {}, h.get("total") or 0
         share = h.get("share") or 0
@@ -155,16 +154,15 @@ class MainPage(Page):
             for k in KINDS:
                 ext = 360.0 * busy.get(k, 0) / total
                 if ext >= 3:
-                    c.create_arc(*box, start=ang - ext + 1.5, extent=ext - 3, style="arc", width=wdt,
-                                 outline=KIND_COLORS[k], tags=("dyn",))
+                    aa.arc(cx, cy, R, ang - ext + 1.5, ext - 3, wdt, KIND_COLORS[k], ("dyn",))
                 ang -= ext
         else:
-            c.create_oval(*box, outline=GRID, width=wdt, tags=("dyn",))
+            aa.oval_ring(*box, wdt, GRID, ("dyn",))
         for k in range(24):
             a = math.radians(k * 15)
             r0, r1 = R + 9, R + 13
-            c.create_line(cx + r0 * math.cos(a), cy - r0 * math.sin(a), cx + r1 * math.cos(a), cy - r1 * math.sin(a),
-                          fill=TAN if k % 6 == 0 else MUTED, width=2, tags=("dyn",))
+            aa.segment(cx + r0 * math.cos(a), cy - r0 * math.sin(a), cx + r1 * math.cos(a), cy - r1 * math.sin(a), 2,
+                       TAN if k % 6 == 0 else MUTED, ("dyn",))
         hot = share > 0.25 and total > 600
         self.w.text(cx, cy, f"{share:.0%}", self.w.f_lab, RED_HI if hot else INK, anchor="center")
         lx = cx + R + 24
